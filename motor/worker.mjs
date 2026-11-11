@@ -18,6 +18,7 @@ import { crearSkills } from './skills.mjs'
 import { crearEntregables } from './entregables.mjs'
 import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
+import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
 import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro } from './agencia.mjs'
 import { spawn } from 'node:child_process'
@@ -62,7 +63,8 @@ function loadNegocio() {
 const negocio = loadNegocio()
 
 // Ajustes del motor editables desde el panel (config/motor). Lo que el panel no define sale de negocio.json.
-const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId']
+const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId',
+  'planClaude', 'limitesClaude', 'programadasPrimeroOtros']
 let configPanel = {}
 function ajustes() {
   const panel = Object.fromEntries(Object.entries(configPanel).filter(([k, v]) =>
@@ -71,7 +73,7 @@ function ajustes() {
 }
 // Claves que el admin carga en el panel (colección secretos: el panel escribe, solo el motor lee).
 // Si no están en el panel, se usan las de motor/.env.
-const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY']
+const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY']
 const secretosPanel = new Map()
 const deEnv = (k) => (env[k] && !String(env[k]).startsWith('PEGA_AQUI') ? env[k] : '')
 const secreto = (k) => secretosPanel.get(k) || deEnv(k)
@@ -114,6 +116,27 @@ const enCurso = new Map() // taskId -> { motor, agentId, tarea }
 const CUPOS_BASE = { claude: 1, antigravity: 1, codex: 1, gemini: 1, api: 2 }
 // Tareas que alguien pidió detener (botón Detener en el panel o /parar en Telegram): taskId → quién
 const cancelados = new Map()
+
+// ---------- Consumo de Claude (ventana de 5 h y semana) ----------
+// Cada corrida de Claude Code (tarea, revisión o chat) queda en logs/consumo-claude.json para sobrevivir reinicios.
+const CONSUMO_FILE = join(ROOT, 'logs', 'consumo-claude.json')
+let consumo = { registros: [], bloqueadoHasta: 0 }
+try { consumo = { registros: [], bloqueadoHasta: 0, ...JSON.parse(readFileSync(CONSUMO_FILE, 'utf8')) } } catch {}
+const guardarConsumo = () => { try { writeFileSync(CONSUMO_FILE, JSON.stringify(consumo)) } catch {} }
+function registrarUsoClaude(json) {
+  consumo.registros = podarConsumo([...consumo.registros, { ts: Date.now(), usd: Number(json?.total_cost_usd) || 0, turnos: Number(json?.num_turns) || 0 }], Date.now())
+  guardarConsumo()
+}
+function bloquearClaude(texto) {
+  consumo.bloqueadoHasta = hastaCuandoBloqueado(texto, Date.now())
+  guardarConsumo()
+  log(`⚠ Claude en pausa hasta ${new Date(consumo.bloqueadoHasta).toLocaleString('es')}: las tareas van a los otros motores`)
+  heartbeat()
+}
+const estadoClaude = () => {
+  const a = ajustes()
+  return resumenConsumo(consumo.registros, Date.now(), { plan: a.planClaude, limites: a.limitesClaude, bloqueadoHasta: consumo.bloqueadoHasta })
+}
 let chatOcupado = ''      // conversación del coordinador o un chat en curso
 const ocupadoCon = () => [chatOcupado, ...[...enCurso.values()].map(x => x.tarea)].filter(Boolean).join(' · ')
 let estadoMotores = { codex: null, gemini: null, antigravity: null }
@@ -123,7 +146,7 @@ const heartbeat = (extra = {}) =>
   setDoc(doc(db, 'config', 'agentWorker'), {
     online: !stopping, lastSeen: serverTimestamp(), host: os.hostname(), busyWith: ocupadoCon(), skills: installedSkills(),
     motores: estadoMotores, enCurso: [...enCurso.values()].map(x => ({ tarea: x.tarea, motor: x.motor })),
-    fuentesSkills: skillsMgr.fuentes(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), ...extra,
+    fuentesSkills: skillsMgr.fuentes(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
   }, { merge: true }).then(() => true, e => { log('No pude actualizar el latido:', e.code || e.message); return false })
 
 // Ajustes en uso (panel o negocio.json), para que el panel muestre los valores por defecto
@@ -133,6 +156,7 @@ function ajustesPublicos() {
     paralelo: { ...CUPOS_BASE, ...(a.paralelo || {}) }, respaldo: lista(a.respaldo).length ? lista(a.respaldo) : MOTORES_CLI,
     esperaDepartamentoMin: Number(a.esperaDepartamentoMin ?? 30), zonaHoraria: ZONA(), fuentesSkills: lista(a.fuentesSkills),
     modeloAntigravity: a.modeloAntigravity || '', geminiDePago: a.geminiDePago === true, telegramOwnerId: a.telegramOwnerId || deEnv('TELEGRAM_OWNER_ID') || '',
+    planClaude: planValido(a.planClaude), limitesClaude: limitesDe(a.planClaude, a.limitesClaude), programadasPrimeroOtros: a.programadasPrimeroOtros !== false,
   }
 }
 
@@ -250,7 +274,7 @@ function pump() {
   for (const t of candidatas()) {
     const agent = agents.get(t.asignado)
     if (!agent || [...enCurso.values()].some(x => x.agentId === agent.id)) continue
-    const motor = motorDe(agent, t)
+    const motor = primerMotor(agent, t)
     if (usados(motor) >= (Number(cupos[motor]) || 1)) continue
     enCurso.set(t.id, { motor, agentId: agent.id, tarea: t.tarea, agente: agent.name, desde: Date.now() })
     runTask(t).catch(e => log('✖ Error inesperado en la tarea:', e.message))
@@ -734,7 +758,12 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     const localClaude = join(ROOT, 'node_modules', '.bin', IS_WIN ? 'claude.cmd' : 'claude')
     const bin = existsSync(localClaude) ? `"${localClaude}"` : 'claude'
     // AGENTES_AGENTE: el servidor de medios guarda en la carpeta de este agente
-    const child = lanzar(bin, args, { cwd, shell: true, windowsHide: true, env: { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '' } })
+    // Con suscripción (Pro/Max) se quita ANTHROPIC_API_KEY: si estuviera, Claude Code cobraría por API sin avisar.
+    // Con plan "api" se usa la clave del panel (o la del entorno).
+    const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '' }
+    if (planValido(ajustes().planClaude) === 'api') { if (secreto('ANTHROPIC_API_KEY')) envClaude.ANTHROPIC_API_KEY = secreto('ANTHROPIC_API_KEY') }
+    else delete envClaude.ANTHROPIC_API_KEY
+    const child = lanzar(bin, args, { cwd, shell: true, windowsHide: true, env: envClaude })
     let out = '', err = ''
     const timer = setTimeout(() => { err += '\nTiempo máximo agotado (25 min).'; matar(child) }, RUN_TIMEOUT_MS)
     child.stdout.on('data', d => { out += d })
@@ -743,6 +772,7 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
       clearTimeout(timer)
       let json = null
       try { json = JSON.parse(out.trim().split(/\r?\n/).pop()) } catch {}
+      if (json) registrarUsoClaude(json)
       resolve({ code, json, raw: out, err })
     })
     child.stdin.end(prompt)
@@ -851,7 +881,9 @@ async function correrMotor(m, agent, prompt, cwd, opts, t) {
   if (m === 'claude') {
     const r = await runClaude(prompt, cwd, opts)
     const texto = `${r.err}\n${r.json?.result || ''}`
-    return { ...r, limite: (r.code !== 0 || r.json?.is_error) && motoresMgr.esLimite(texto) }
+    const limite = (r.code !== 0 || r.json?.is_error) && motoresMgr.esLimite(texto)
+    if (limite) bloquearClaude(texto)
+    return { ...r, limite }
   }
   // Codex y Gemini: reglas de los agentes + reglas de archivos en la misma instrucción
   const completo = [reglasAgentes(), prompt, prompt.includes('## Archivos entregables') ? '' : SALIDA_RULES].filter(Boolean).join('\n\n')
@@ -866,21 +898,43 @@ async function correrMotor(m, agent, prompt, cwd, opts, t) {
     : motoresMgr.gemini(completo, cwd, { env: secreto('GEMINI_API_KEY') ? { GEMINI_API_KEY: secreto('GEMINI_API_KEY') } : {} })
 }
 
-async function runModel(agent, prompt, cwd, opts, t) {
+// Orden de motores para la tarea: el principal y luego el respaldo. Claude pasa al final si está saturado o,
+// con plan Pro, si la tarea es programada (desatendida), siempre que la tarea pueda hacerse sin Claude.
+function cadenaMotores(agent, t) {
   const principal = motorDe(agent, t)
+  if (principal === 'api') return { principal, cadena: ['api'], motivo: '' }
+  const respaldo = lista(ajustes().respaldo).length ? lista(ajustes().respaldo) : MOTORES_CLI
+  const base = [...new Set([principal, ...respaldo])].filter(m => MOTORES_CLI.includes(m))
+  if (soloClaude(agent, t)) return { principal, cadena: base, motivo: '' }
+  const c = estadoClaude()
+  const a = ajustes()
+  const motivo = c.saturado ? c.motivo
+    : (t?.programadaId && c.plan === 'pro' && a.programadasPrimeroOtros !== false) ? 'tarea programada con plan Pro' : ''
+  const cadena = ordenarCadena(base, !!motivo)
+  // Si no hay otro motor conectado que sirva, Claude sigue siendo el primero
+  const hayOtro = cadena.some(m => m !== 'claude' && motorDisponible(m, agent, t))
+  return { principal, cadena: hayOtro ? cadena : base, motivo: hayOtro ? motivo : '' }
+}
+// Motor con el que arrancará la tarea (para los cupos en paralelo)
+function primerMotor(agent, t) {
+  const { principal, cadena } = cadenaMotores(agent, t)
+  return cadena.find(m => m === 'claude' || m === 'api' || motorDisponible(m, agent, t)) || principal
+}
+
+async function runModel(agent, prompt, cwd, opts, t) {
+  const { principal, cadena, motivo } = cadenaMotores(agent, t)
   if (principal === 'api') {
     const cfg = await apiConfigFor(agent)
     log(`  (modelo: ${cfg.nombre} / ${cfg.model})`)
     return { ...(await runApi(cfg, prompt)), motor: 'api' }
   }
-  // Principal y después los de respaldo (negocio.json → respaldo), solo si están conectados y sirven para la tarea
-  const respaldo = lista(ajustes().respaldo).length ? lista(ajustes().respaldo) : MOTORES_CLI
-  const cadena = [...new Set([principal, ...respaldo])].filter(m => MOTORES_CLI.includes(m))
+  // Principal y después los de respaldo, solo si están conectados y sirven para la tarea
+  if (motivo && cadena.includes('claude')) log(`  Claude queda de último recurso (${motivo})`)
   let ultimo = null
   for (const m of cadena) {
     // Detenida antes de arrancar (o entre un motor y su respaldo): no lanzar nada más
     if (t && cancelados.has(t.id)) return { ...(ultimo || { code: 1, json: null, raw: '', err: '' }), motor: ultimo?.motor || m, cancelada: true }
-    if (m !== principal && !motorDisponible(m, agent, t)) continue
+    if (m !== principal && m !== 'claude' && !motorDisponible(m, agent, t)) continue
     if (m === principal && m !== 'claude' && !motorDisponible(m, agent, t)) {
       log(`  ${m} no está disponible para "${t?.tarea || 'el chat'}" (sin sesión, herramienta solo de Claude o cliente sin permiso de modelos gratis): uso el respaldo`)
       continue

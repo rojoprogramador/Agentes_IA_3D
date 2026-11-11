@@ -289,6 +289,9 @@ export default function OfficeView() {
                 title={on ? `Desde ${engine.host || 'el PC del dueño'}` : 'Los agentes trabajan cuando el PC del dueño tiene el motor encendido'}>
                 <span className="office-dot" style={{ background: on ? '#22c55e' : '#9ca3af' }} />
                 {on ? (engine.busyWith ? `Motor de agentes: trabajando en "${engine.busyWith}"` : 'Motor de agentes conectado') : 'Motor de agentes apagado'}
+                {on && engine.consumoClaude && (engine.consumoClaude.saturado
+                  ? ' · Claude en reserva'
+                  : engine.consumoClaude.plan !== 'api' ? ` · Claude ${engine.consumoClaude.pct5h}% (5 h)` : '')}
               </span>
             )
           })()}
