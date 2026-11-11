@@ -223,8 +223,8 @@ sesión en el PC del motor.
 
 | Motor | Con qué entra | Herramientas | Notas |
 |---|---|---|---|
-| Claude Code | Tu suscripción de Claude | Todas (web, archivos, skills, video, Gmail, Drive…) | Único motor para roles de video, imágenes, correo y Drive. |
-| Antigravity | Google AI Pro/Ultra (`agy`) | Web, leer y escribir en `salida/` | Elige el modelo (Gemini, Claude, GPT-OSS) en cada agente. Sin terminal. |
+| Claude Code | Tu suscripción de Claude | Todas (web, archivos, skills, video, Gmail, Drive…) | Único motor para correo, calendario y crear en Drive. |
+| Antigravity | Google AI Pro/Ultra (`agy`) | Web, escribir en `salida/`, **edición de video** (las herramientas del motor) e **imágenes** con su propio generador | Elige el modelo (Gemini, Claude, GPT-OSS) en cada agente. Sin terminal. Sirve para los roles de video e imágenes (en vez de Magnific). No genera video desde cero. |
 | Codex | Cuenta de ChatGPT | Escribe en la carpeta de la tarea (sandbox) | |
 | Gemini CLI | `GEMINI_API_KEY` | Escribe en la carpeta de la tarea | Clave sin facturación = plan gratis. |
 | API (solo texto) | Clave en Modelos de IA | Ninguna | Para textos con el brief completo. |

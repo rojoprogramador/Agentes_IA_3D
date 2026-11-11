@@ -72,6 +72,12 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   si está saturado o si es tarea programada con Pro (`programadasPrimeroOtros`), salvo `soloClaude`; `pump` cuenta cupos
   con `primerMotor()`. El latido publica `consumoClaude` (`MedidorClaude.jsx`). Plan `api` usa `secretos/ANTHROPIC_API_KEY`;
   con Pro/Max se borra `ANTHROPIC_API_KEY` del entorno del hijo.
+- Antigravity con medios: si la tarea tiene herramientas `mcp__agentes-media__*`, `correrMotor` declara el servidor de
+  medios como plugin del proyecto en `<tarea>/.agents/plugins/agentes-media/` (se borra al terminar) y permite cada
+  herramienta con `mcp(agentes-media_agentes-media/<herramienta>)`. Las imágenes de su generador quedan en
+  `~/.gemini/antigravity-cli/brain/<conversation_id>/` y `copiarImagenesAgy` las copia a `salida/`. En el worker:
+  `soloClaude` = grupos que ni Antigravity tiene (Gmail, calendario, crear en Drive, MCP extra); `sinHerramientasMcp`
+  decide Codex y Gemini (`GRUPOS_ANTIGRAVITY` = entregas, editor_video, magnific_imagenes).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
 

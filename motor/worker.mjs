@@ -859,11 +859,19 @@ function motorDe(agent, t) {
 // Herramientas que solo existen en Claude Code (servidores MCP: medios, video, Magnific, Gmail, Drive…)
 // (Leer Drive no cuenta: es opcional y Codex/Gemini trabajan sin él)
 const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear']
-function soloClaude(agent, t) {
+// Antigravity también puede: las herramientas de medios del motor (entregas y edición de video, conectadas por
+// tarea como plugin MCP) e imágenes con su propio generador en lugar de Magnific.
+const GRUPOS_ANTIGRAVITY = ['entregas', 'editor_video', 'magnific_imagenes']
+function gruposExclusivos(agent, t) {
   const p = perfilDe(agent)
-  const grupos = [...lista(p.herramientas), ...permisosDeTarea(t, p._cat.herramientas || {})]
-  return grupos.some(g => GRUPOS_SOLO_CLAUDE.includes(g)) || lista(p.herramientasExtra).some(x => String(x).startsWith('mcp__'))
+  const grupos = [...lista(p.herramientas), ...permisosDeTarea(t, p._cat.herramientas || {})].filter(g => GRUPOS_SOLO_CLAUDE.includes(g))
+  if (lista(p.herramientasExtra).some(x => String(x).startsWith('mcp__'))) grupos.push('mcp_extra')
+  return grupos
 }
+// Necesita herramientas que solo tiene Claude Code (ni Antigravity puede hacerla)
+const soloClaude = (agent, t) => gruposExclusivos(agent, t).some(g => !GRUPOS_ANTIGRAVITY.includes(g))
+// Codex y Gemini no tienen ninguna de esas herramientas
+const sinHerramientasMcp = (agent, t) => gruposExclusivos(agent, t).length === 0
 // ¿Puede ir a un motor gratis (que puede entrenar con los datos)? Solo tareas internas o clientes con permiso
 function permiteGratis(t) {
   const c = t && clientFor(t)
@@ -871,9 +879,9 @@ function permiteGratis(t) {
 }
 function motorDisponible(m, agent, t) {
   if (m === 'claude') return true
-  if (m === 'codex') return !!estadoMotores.codex?.conectado && !soloClaude(agent, t)
+  if (m === 'codex') return !!estadoMotores.codex?.conectado && sinHerramientasMcp(agent, t)
   if (m === 'antigravity') return !!estadoMotores.antigravity?.conectado && !soloClaude(agent, t)
-  if (m === 'gemini') return !!estadoMotores.gemini?.conectado && !soloClaude(agent, t) && (ajustes().geminiDePago === true || permiteGratis(t))
+  if (m === 'gemini') return !!estadoMotores.gemini?.conectado && sinHerramientasMcp(agent, t) && (ajustes().geminiDePago === true || permiteGratis(t))
   return false
 }
 
@@ -891,7 +899,18 @@ async function correrMotor(m, agent, prompt, cwd, opts, t) {
   if (m === 'antigravity') {
     // Modelo elegido en el agente si es de Antigravity; si no, el que tenga por defecto
     const modelo = agent?.modelo?.proveedor === 'antigravity' ? agent.modelo.nombre : (ajustes().modeloAntigravity || '')
-    return motoresMgr.antigravity(completo, cwd, { modelo })
+    // Herramientas de medios del motor que tendría con Claude (entregas, edición de video) → plugin MCP de la tarea
+    const herramientas = toolsFor(agent, t).filter(x => x.startsWith('mcp__agentes-media__')).map(x => x.slice('mcp__agentes-media__'.length))
+    const mcp = herramientas.length ? {
+      command: process.execPath, args: [join(ROOT, 'media-server.mjs')], herramientas,
+      env: { AGENTES_AGENTE: opts?.agentName || '', AGENTES_COLOR: negocio.color || '' },
+    } : null
+    const conImagenes = gruposExclusivos(agent, t).includes('magnific_imagenes')
+    const notas = [
+      mcp ? `## Herramientas de medios\nTienes el servidor MCP "agentes-media" con: ${herramientas.join(', ')}. Úsalas igual que en las instrucciones de tu rol.` : '',
+      conImagenes ? '## Imágenes en este motor\nMagnific no está disponible aquí: crea las imágenes con tu generador de imágenes (subagente image-generator). El motor copia a tu entrega las imágenes que generes en esta tarea; menciona en tu respuesta cuáles son y el prompt de cada una.' : '',
+    ].filter(Boolean).join('\n\n')
+    return motoresMgr.antigravity(notas ? `${completo}\n\n${notas}` : completo, cwd, { modelo, mcp })
   }
   return m === 'codex'
     ? motoresMgr.codex(completo, cwd, { web })
