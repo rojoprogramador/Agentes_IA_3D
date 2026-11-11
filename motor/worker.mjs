@@ -18,6 +18,7 @@ import { crearSkills } from './skills.mjs'
 import { crearEntregables } from './entregables.mjs'
 import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
+import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
 import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro } from './agencia.mjs'
@@ -66,6 +67,7 @@ const negocio = loadNegocio()
 const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId',
   'planClaude', 'limitesClaude', 'programadasPrimeroOtros']
 let configPanel = {}
+let perfilDueno = {}   // config/perfilDueno: { entradas } (memoria del dueño, se edita en el panel)
 function ajustes() {
   const panel = Object.fromEntries(Object.entries(configPanel).filter(([k, v]) =>
     AJUSTES_PANEL.includes(k) && v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)))
@@ -370,6 +372,7 @@ function businessContext() {
     n.identidad ? `Identidad visual: ${n.identidad}` : '',
     n.tono ? `Tono de comunicación: ${n.tono}` : '',
     `Quien aprueba el trabajo es ${OWNER}. Si la tarea no dice cliente, el cliente es ${n.nombre || 'el propio negocio'}.`,
+    bloqueMemoria(`PERFIL DE ${OWNER}`, perfilDueno.entradas, LIMITES_MEMORIA.dueno, `Preferencias de ${OWNER} como quien aprueba (respétalas):`),
   ].filter(Boolean).join('\n')
 }
 
@@ -718,8 +721,8 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
   const ejemplos = lista(agent.ejemplos).filter(e => e.texto).slice(0, 3)
   if (ejemplos.length) lines.push('\n## Ejemplos de trabajo que le gustaron a ' + OWNER + ' (imita el nivel, no copies el contenido)',
     ...ejemplos.map(e => `### ${e.titulo || 'Ejemplo'}\n${String(e.texto).slice(0, 3000)}`))
-  const lecciones = lista(agent.aprendizajes).slice(-10)
-  if (lecciones.length) lines.push('\n## Lecciones de correcciones anteriores (aplícalas siempre)', ...lecciones.map(a => `- ${a.texto}`))
+  const memoria = bloqueMemoria(`TU MEMORIA (${agent.name})`, agent.aprendizajes, LIMITES_MEMORIA.agente, 'Lecciones de correcciones anteriores, para todos tus clientes (aplícalas siempre):')
+  if (memoria) lines.push('\n' + memoria)
   if (lista(agent.skills).length && !usaApi(agent, t)) lines.push(`\n## Skills\nCuando apliquen, usa estas skills con la herramienta Skill: ${agent.skills.join(', ')}.`)
   // Sistemas de diseño por cliente (negocio.json → agentes[id].sistemasPorCliente)
   const sistemas = perfil?.sistemasPorCliente
@@ -1648,6 +1651,7 @@ function escucharPanel() {
     okConfig()
     heartbeat()
   }, e => { log('Ajustes del panel sin acceso; uso negocio.json:', e.code || e.message); okConfig() })
+  onSnapshot(doc(db, 'config', 'perfilDueno'), d => { perfilDueno = d.data() || {} }, () => {})
   let previo = null
   onSnapshot(collection(db, 'secretos'), snap => {
     secretosPanel.clear()
