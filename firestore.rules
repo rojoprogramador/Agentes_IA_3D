@@ -146,6 +146,12 @@ service cloud.firestore {
       allow read: if isAgentBot();
       allow create, update, delete: if isAdmin();
     }
+    // Claves del motor (Telegram, Gemini…): el admin las escribe desde el panel y solo el motor las lee.
+    // El panel nunca las vuelve a mostrar; el motor publica en config/agentWorker si cada una está cargada.
+    match /secretos/{nombre} {
+      allow read: if isAgentBot();
+      allow create, update, delete: if isAdmin();
+    }
 
     // Invitaciones: solo admins gestionan; el invitado necesita leer/borrar la suya al registrarse
     match /invites/{email} {
