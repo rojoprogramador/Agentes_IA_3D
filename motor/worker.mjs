@@ -17,6 +17,7 @@ import { startTelegram } from './telegram.mjs'
 import { crearSkills } from './skills.mjs'
 import { crearEntregables } from './entregables.mjs'
 import { crearMotores } from './motores.mjs'
+import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
 import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro } from './agencia.mjs'
 import { spawn } from 'node:child_process'
@@ -111,6 +112,8 @@ const schedulesById = new Map()   // tareas programadas (colección schedules)  
 // Tareas en curso (pueden ser varias: una por agente y con cupos por motor, negocio.json → paralelo)
 const enCurso = new Map() // taskId -> { motor, agentId, tarea }
 const CUPOS_BASE = { claude: 1, antigravity: 1, codex: 1, gemini: 1, api: 2 }
+// Tareas que alguien pidió detener (botón Detener en el panel o /parar en Telegram): taskId → quién
+const cancelados = new Map()
 let chatOcupado = ''      // conversación del coordinador o un chat en curso
 const ocupadoCon = () => [chatOcupado, ...[...enCurso.values()].map(x => x.tarea)].filter(Boolean).join(' · ')
 let estadoMotores = { codex: null, gemini: null, antigravity: null }
@@ -223,6 +226,8 @@ function eligible(t) {
   const agent = agents.get(t.asignado)
   if (!agent || agent.active === false) return false
   if (t.pendingAcceptance) return false
+  // Detenida: espera a que alguien la reanude (Reanudar en el panel o moverla a Correcciones)
+  if (t.agentStatus === 'cancelada' || t.cancelar) return false
   if (t.estado === 'pendiente' || t.estado === 'en_revision') return true
   // En progreso: la retoma si quedó a medias (PC apagado) y nadie la pausó
   if (t.estado === 'en_progreso') return !t.timerPaused && !enCurso.has(t.id)
@@ -247,9 +252,9 @@ function pump() {
     if (!agent || [...enCurso.values()].some(x => x.agentId === agent.id)) continue
     const motor = motorDe(agent, t)
     if (usados(motor) >= (Number(cupos[motor]) || 1)) continue
-    enCurso.set(t.id, { motor, agentId: agent.id, tarea: t.tarea })
+    enCurso.set(t.id, { motor, agentId: agent.id, tarea: t.tarea, agente: agent.name, desde: Date.now() })
     runTask(t).catch(e => log('✖ Error inesperado en la tarea:', e.message))
-      .finally(() => { enCurso.delete(t.id); heartbeat(); setTimeout(pump, 1500) })
+      .finally(() => { enCurso.delete(t.id); cancelados.delete(t.id); heartbeat(); setTimeout(pump, 1500) })
   }
 }
 
@@ -729,9 +734,9 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     const localClaude = join(ROOT, 'node_modules', '.bin', IS_WIN ? 'claude.cmd' : 'claude')
     const bin = existsSync(localClaude) ? `"${localClaude}"` : 'claude'
     // AGENTES_AGENTE: el servidor de medios guarda en la carpeta de este agente
-    const child = spawn(bin, args, { cwd, shell: true, windowsHide: true, env: { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '' } })
+    const child = lanzar(bin, args, { cwd, shell: true, windowsHide: true, env: { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '' } })
     let out = '', err = ''
-    const timer = setTimeout(() => { err += '\nTiempo máximo agotado (25 min).'; child.kill() }, RUN_TIMEOUT_MS)
+    const timer = setTimeout(() => { err += '\nTiempo máximo agotado (25 min).'; matar(child) }, RUN_TIMEOUT_MS)
     child.stdout.on('data', d => { out += d })
     child.stderr.on('data', d => { err += d })
     child.on('close', (code) => {
@@ -873,6 +878,8 @@ async function runModel(agent, prompt, cwd, opts, t) {
   const cadena = [...new Set([principal, ...respaldo])].filter(m => MOTORES_CLI.includes(m))
   let ultimo = null
   for (const m of cadena) {
+    // Detenida antes de arrancar (o entre un motor y su respaldo): no lanzar nada más
+    if (t && cancelados.has(t.id)) return { ...(ultimo || { code: 1, json: null, raw: '', err: '' }), motor: ultimo?.motor || m, cancelada: true }
     if (m !== principal && !motorDisponible(m, agent, t)) continue
     if (m === principal && m !== 'claude' && !motorDisponible(m, agent, t)) {
       log(`  ${m} no está disponible para "${t?.tarea || 'el chat'}" (sin sesión, herramienta solo de Claude o cliente sin permiso de modelos gratis): uso el respaldo`)
@@ -881,6 +888,7 @@ async function runModel(agent, prompt, cwd, opts, t) {
     if (m !== principal) log(`  ↪ Respaldo: ${m}`)
     const r = await correrMotor(m, agent, prompt, cwd, opts, t)
     ultimo = { ...r, motor: m }
+    if (t && cancelados.has(t.id)) return { ...ultimo, cancelada: true }
     if (!r.limite && !r.permisoDenegado) return ultimo
     log(r.limite ? `  ⚠ ${m} llegó a su límite de uso` : `  ⚠ ${m}: ${r.err}`)
   }
@@ -1051,6 +1059,73 @@ async function syncApproved(t) {
 }
 
 // ---------- ejecutar una tarea ----------
+// ---------- Detener tareas ----------
+// Mata los procesos del motor que trabajan en la carpeta de la tarea. La tarea queda en "pendiente" y detenida
+// (agentStatus 'cancelada') hasta que alguien la reanude, para que el motor no la vuelva a tomar sola.
+function detenerTarea(id, quien = 'el equipo') {
+  if (!enCurso.has(id) || cancelados.has(id)) return false
+  cancelados.set(id, quien)
+  const n = matarEn(join(ROOT, 'trabajos', id))
+  log(`⏹ ${quien} detuvo "${enCurso.get(id).tarea}" (${n} proceso(s))`)
+  return true
+}
+
+async function terminarCancelada(t, started) {
+  const ref = doc(db, 'tasks', t.id)
+  const quien = cancelados.get(t.id) || 'el equipo'
+  const seconds = Math.round((Date.now() - started) / 1000)
+  const fresh = (await getDoc(ref)).data() || {}
+  await updateDoc(ref, {
+    ...(fresh.estado === 'en_progreso' ? { estado: 'pendiente' } : {}),
+    timerStartedAt: null,
+    totalTimeSeconds: (fresh.totalTimeSeconds || 0) + seconds,
+    agentStatus: 'cancelada', cancelar: false,
+    agentError: `Detenida por ${quien} el ${new Date().toLocaleString('es')}. Lo que alcanzó a hacer quedó en su carpeta de trabajo. Reanúdala cuando quieras.`,
+  }).catch(e => log('No pude marcar la tarea detenida:', e.code || e.message))
+  log(`⏹ "${t.tarea}" quedó detenida`)
+}
+
+// Pedido de detener desde el panel (campo cancelar en la tarea)
+async function atenderCancelaciones() {
+  for (const t of tasks.values()) {
+    if (!t.cancelar) continue
+    const quien = t.cancelarPor || 'el panel'
+    if (enCurso.has(t.id)) { detenerTarea(t.id, quien); continue }
+    // No estaba trabajando (en cola): solo se marca detenida
+    if (t.agentStatus === 'cancelada' || !agents.has(t.asignado)) continue
+    await updateDoc(doc(db, 'tasks', t.id), {
+      agentStatus: 'cancelada', cancelar: false, timerStartedAt: null,
+      ...(t.estado === 'en_progreso' ? { estado: 'pendiente' } : {}),
+      agentError: `Detenida por ${quien} antes de empezar. Reanúdala cuando quieras.`,
+    }).catch(e => log('No pude detener la tarea en cola:', e.code || e.message))
+  }
+}
+
+// Comandos de Telegram que no pasan por el coordinador
+function enCursoLista() {
+  return [...enCurso.entries()].map(([id, x], i) => ({ i: i + 1, id, ...x }))
+}
+function comandoEstado() {
+  const l = enCursoLista()
+  const enCola = candidatas().length
+  if (!l.length) return `Ningún agente está trabajando ahora.${enCola ? ` Hay ${enCola} tarea(s) en cola.` : ''}`
+  const min = (ms) => Math.max(1, Math.round((Date.now() - ms) / 60000))
+  return ['Trabajando ahora:', ...l.map(x => `${x.i}. ${x.agente || 'Agente'} · "${x.tarea}" · ${x.motor} · ${min(x.desde)} min`),
+    enCola ? `\nEn cola: ${enCola}` : '', '\nPara detener una: /parar <número>'].filter(Boolean).join('\n')
+}
+function comandoParar(arg) {
+  const l = enCursoLista()
+  if (!l.length) return 'No hay tareas en curso.'
+  const a = String(arg || '').trim()
+  if (!a) return comandoEstado()
+  const n = Number(a)
+  const coinciden = Number.isInteger(n) ? l.filter(x => x.i === n) : l.filter(x => x.tarea.toLowerCase().includes(a.toLowerCase()))
+  if (!coinciden.length) return `No encontré "${a}". ${comandoEstado()}`
+  if (coinciden.length > 1) return `Hay varias que coinciden con "${a}". Usa el número:\n${coinciden.map(x => `${x.i}. "${x.tarea}"`).join('\n')}`
+  const x = coinciden[0]
+  return detenerTarea(x.id, `${OWNER} (Telegram)`) ? `Detengo "${x.tarea}". Queda en pendiente; la reanudas desde el panel.` : `"${x.tarea}" ya se estaba deteniendo.`
+}
+
 async function runTask(t) {
   const agent = agents.get(t.asignado)
   const ref = doc(db, 'tasks', t.id)
@@ -1091,6 +1166,7 @@ async function runTask(t) {
 
   const opts = { tools: toolsFor(agent, t), agentName: deliveryName(agent), maxTurns: maxTurnsFor(agent) }
   const res = await runModel(agent, prompt, cwd, opts, t)
+  if (cancelados.has(t.id)) return terminarCancelada(t, started)
   let extraCost = 0, extraTurns = 0
   const seconds = Math.round((Date.now() - started) / 1000)
   let result = (res.json?.result || '').trim()
@@ -1155,6 +1231,9 @@ async function runTask(t) {
       notas: r1.parsed?.notas || [], corregida, fecha: new Date().toISOString(),
     }
   }
+
+  // Si la detuvieron durante la revisión entre agentes, no se entrega
+  if (cancelados.has(t.id)) return terminarCancelada(t, started)
 
   // Nueva versión: carpeta local / Drive + historial en la tarea
   const prevVersions = lista(fresh.versiones)
@@ -1316,6 +1395,8 @@ const SESSION_FILE = join(ROOT, 'logs', 'coordinador-sesion.json')
 let chatBusy = Promise.resolve()
 
 function handleTelegram(text) {
+  const cmd = String(text || '').trim().match(/^\/(estado|parar)(?:@\w+)?\s*(.*)$/is)
+  if (cmd) return Promise.resolve(cmd[1].toLowerCase() === 'estado' ? comandoEstado() : comandoParar(cmd[2]))
   // Un mensaje a la vez para conservar el hilo de la conversación
   const job = chatBusy.then(() => hablarConCoordinador(text))
   chatBusy = job.catch(() => {})
@@ -1422,6 +1503,7 @@ async function main() {
   onSnapshot(query(collection(db, 'tasks'), where('estado', 'in', ['pendiente', 'en_progreso', 'en_revision'])), snap => {
     tasks.clear()
     snap.forEach(d => tasks.set(d.id, { id: d.id, ...d.data() }))
+    atenderCancelaciones()
     pump()
     repartirTareasDeDepartamento()
   }, e => log('Error leyendo tareas:', e.code || e.message))
@@ -1535,6 +1617,7 @@ async function shutdown() {
   stopping = true
   log('Apagando motor…')
   telegram?.stop()
+  matarTodos()
   await heartbeat({ online: false })
   process.exit(0)
 }
