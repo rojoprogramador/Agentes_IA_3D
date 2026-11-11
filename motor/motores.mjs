@@ -9,6 +9,7 @@
 // - Gemini: modo "auto_edit" (aprueba solo editar archivos dentro del espacio de trabajo; los comandos quedan
 //   sin aprobar y por eso no se ejecutan en modo sin ventana).
 
+import { lanzar, matar } from './procesos.mjs'
 import { spawn, execFile } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -25,9 +26,9 @@ export function crearMotores({ ROOT, log, timeoutMs = 25 * 60 * 1000 }) {
 
   function correr(cmd, args, { cwd, input, env = {} }) {
     return new Promise((resolve) => {
-      const child = spawn(cmd, args, { cwd, windowsHide: true, shell: IS_WIN, env: { ...process.env, ...env, NO_COLOR: '1' } })
+      const child = lanzar(cmd, args, { cwd, windowsHide: true, shell: IS_WIN, env: { ...process.env, ...env, NO_COLOR: '1' } })
       let out = '', err = ''
-      const timer = setTimeout(() => { err += '\nTiempo máximo agotado.'; child.kill() }, timeoutMs)
+      const timer = setTimeout(() => { err += '\nTiempo máximo agotado.'; matar(child) }, timeoutMs)
       child.stdout.on('data', d => { out += d })
       child.stderr.on('data', d => { err += d })
       child.on('error', e => { clearTimeout(timer); resolve({ code: -1, out, err: err + e.message }) })
@@ -107,9 +108,9 @@ async function antigravity(prompt, cwd, { modelo, env } = {}) {
 }
 function correrAgy(args, cwd, env) {
   return new Promise((done) => {
-    const child = spawn(agyBin(), args, { cwd, windowsHide: true, env: { ...process.env, ...(env || {}), NO_COLOR: '1' } })
+    const child = lanzar(agyBin(), args, { cwd, windowsHide: true, env: { ...process.env, ...(env || {}), NO_COLOR: '1' } })
     let out = '', err = ''
-    const timer = setTimeout(() => { err += '\nTiempo máximo agotado.'; child.kill() }, timeoutMsAgy)
+    const timer = setTimeout(() => { err += '\nTiempo máximo agotado.'; matar(child) }, timeoutMsAgy)
     child.stdout.on('data', d => { out += d })
     child.stderr.on('data', d => { err += d })
     child.on('error', e => { clearTimeout(timer); done({ code: -1, out, err: err + (e.code === 'ENOENT' ? 'Antigravity CLI no está instalado' : e.message) }) })

@@ -61,6 +61,11 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `ajustes()` = `negocio.json` + lo que defina el panel, y `secreto(k)` = panel o `motor/.env`; se escuchan en vivo y
   Telegram se reinicia si cambia su token. El latido publica `secretos` (origen: panel/env/null, nunca el valor) y
   `ajustesEfectivos`. Para una clave nueva: agrégala a `SECRETOS` (worker) y `SECRETOS_MOTOR` (panel).
+- Detener tareas: el panel escribe `tasks.cancelar = true` (+ `cancelarPor`) y Telegram usa `/parar`. Todos los motores
+  lanzan sus procesos con `motor/procesos.mjs` (`lanzar` en su propio grupo, registrados por carpeta de trabajo);
+  `detenerTarea` mata todo lo de `trabajos/<id>` con sus hijos (servidores MCP incluidos), `runModel` no pasa al respaldo
+  y `terminarCancelada` deja la tarea en `pendiente` con `agentStatus: 'cancelada'`, que `eligible` ignora hasta que
+  alguien la reanude (`agentStatus: 'queued'`).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
 

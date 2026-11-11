@@ -168,6 +168,10 @@ Otros comandos dentro de `motor/`:
    trabajen para él) o como **lección del agente** (la aplicará con todos sus clientes).
 5. **Completada**: queda con su tiempo trabajado, sus versiones y quién la terminó.
 
+**Detener una tarea**: mientras un agente trabaja (o espera en cola), abre la tarea y pulsa **Detener**. El motor corta
+al agente en el momento, la tarea vuelve a "pendiente" y queda detenida: no la retoma sola. Lo que alcanzó a hacer
+queda en su carpeta de trabajo. Pulsa **Reanudar** (o envíala a Correcciones con una nota) para que siga.
+
 ### Los dos links de la tarea
 
 | Campo | Para qué sirve |
@@ -183,7 +187,8 @@ Si llenas el link de la tarea terminada antes de que el agente trabaje, el agent
 - **Descansos**: un agente o una persona puede ir por un café; vuelve solo a los 3 minutos o con
   **Volver a trabajar** / **Ya volví**. **Pasar a reserva** saca a un agente del equipo activo sin borrarlo.
 - **Telegram** (si lo configuraste): escríbele o mándale una nota de voz al coordinador. Reparte las tareas y te
-  avisa cuando un agente termina o necesita información; respondes a sus preguntas desde ahí mismo.
+  avisa cuando un agente termina o necesita información; respondes a sus preguntas desde ahí mismo. Comandos: `/estado` (qué hace cada agente y cuánto lleva) y
+  `/parar <número>` (detiene esa tarea).
 
 ## Agencia: clientes, departamentos y skills
 
