@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import MemoriaEditor from './MemoriaEditor.jsx'
 import { db } from '../firebase.js'
 import { doc, updateDoc, addDoc, collection, serverTimestamp, getDoc } from 'firebase/firestore'
 import Icon from './Icons.jsx'
@@ -335,18 +336,11 @@ export default function AgentModal({ agent, nextOrder, onClose, showToast, userE
               <span style={{ fontSize: 11, color: 'var(--warning)' }}>Las skills solo funcionan con Claude Code.</span>
             )}
           </div>
-          {form.aprendizajes.length > 0 && (
-            <div className="form-group">
-              <label className="form-label">Lecciones aprendidas ({form.aprendizajes.length})</label>
-              {form.aprendizajes.map((a, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, padding: '6px 10px', background: 'var(--bg-2)', borderRadius: 8, marginBottom: 4 }}>
-                  <span style={{ flex: 1 }}>{a.texto}</span>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}
-                    onClick={() => setForm(f => ({ ...f, aprendizajes: f.aprendizajes.filter((_, j) => j !== i) }))}>✕</button>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="form-group">
+            <label className="form-label">Memoria del agente (lecciones para todos sus clientes)</label>
+            <MemoriaEditor tipo="agente" entradas={form.aprendizajes} onChange={v => setForm(f => ({ ...f, aprendizajes: v }))}
+              vacio="Aún no tiene lecciones. Se agregan cuando, al corregir una entrega, marcas guardarla como lección del agente." />
+          </div>
           <div className="form-group">
             <label className="form-label">Clientes que atiende</label>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
