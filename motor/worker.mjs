@@ -59,6 +59,23 @@ function loadNegocio() {
   try { return JSON.parse(readFileSync(join(ROOT, 'negocio.json'), 'utf8')) } catch { return {} }
 }
 const negocio = loadNegocio()
+
+// Ajustes del motor editables desde el panel (config/motor). Lo que el panel no define sale de negocio.json.
+const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId']
+let configPanel = {}
+function ajustes() {
+  const panel = Object.fromEntries(Object.entries(configPanel).filter(([k, v]) =>
+    AJUSTES_PANEL.includes(k) && v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)))
+  return { ...loadNegocio(), ...panel }
+}
+// Claves que el admin carga en el panel (colección secretos: el panel escribe, solo el motor lee).
+// Si no están en el panel, se usan las de motor/.env.
+const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY']
+const secretosPanel = new Map()
+const deEnv = (k) => (env[k] && !String(env[k]).startsWith('PEGA_AQUI') ? env[k] : '')
+const secreto = (k) => secretosPanel.get(k) || deEnv(k)
+const origenSecretos = () => Object.fromEntries(SECRETOS.map(k => [k, secretosPanel.get(k) ? 'panel' : deEnv(k) ? 'env' : null]))
+
 const OWNER = negocio.dueno?.nombre || 'el dueño'
 
 mkdirSync(join(ROOT, 'logs'), { recursive: true })
@@ -93,6 +110,7 @@ const providersById = new Map()
 const schedulesById = new Map()   // tareas programadas (colección schedules)   // proveedores de modelos (datos públicos; la clave se lee aparte)
 // Tareas en curso (pueden ser varias: una por agente y con cupos por motor, negocio.json → paralelo)
 const enCurso = new Map() // taskId -> { motor, agentId, tarea }
+const CUPOS_BASE = { claude: 1, antigravity: 1, codex: 1, gemini: 1, api: 2 }
 let chatOcupado = ''      // conversación del coordinador o un chat en curso
 const ocupadoCon = () => [chatOcupado, ...[...enCurso.values()].map(x => x.tarea)].filter(Boolean).join(' · ')
 let estadoMotores = { codex: null, gemini: null, antigravity: null }
@@ -102,12 +120,22 @@ const heartbeat = (extra = {}) =>
   setDoc(doc(db, 'config', 'agentWorker'), {
     online: !stopping, lastSeen: serverTimestamp(), host: os.hostname(), busyWith: ocupadoCon(), skills: installedSkills(),
     motores: estadoMotores, enCurso: [...enCurso.values()].map(x => ({ tarea: x.tarea, motor: x.motor })),
-    fuentesSkills: skillsMgr.fuentes(), ...extra,
+    fuentesSkills: skillsMgr.fuentes(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), ...extra,
   }, { merge: true }).then(() => true, e => { log('No pude actualizar el latido:', e.code || e.message); return false })
+
+// Ajustes en uso (panel o negocio.json), para que el panel muestre los valores por defecto
+function ajustesPublicos() {
+  const a = ajustes()
+  return {
+    paralelo: { ...CUPOS_BASE, ...(a.paralelo || {}) }, respaldo: lista(a.respaldo).length ? lista(a.respaldo) : MOTORES_CLI,
+    esperaDepartamentoMin: Number(a.esperaDepartamentoMin ?? 30), zonaHoraria: ZONA(), fuentesSkills: lista(a.fuentesSkills),
+    modeloAntigravity: a.modeloAntigravity || '', geminiDePago: a.geminiDePago === true, telegramOwnerId: a.telegramOwnerId || deEnv('TELEGRAM_OWNER_ID') || '',
+  }
+}
 
 // Skills de Claude Code instaladas en este PC (las del motor y las del usuario), para el panel
 const entregablesMgr = crearEntregables({ log: (...a) => log(...a), config: () => mediaConfig() })
-const skillsMgr = crearSkills({ ROOT, log: (...a) => log(...a), fuentesExtra: () => loadNegocio().fuentesSkills || [] })
+const skillsMgr = crearSkills({ ROOT, log: (...a) => log(...a), fuentesExtra: () => lista(ajustes().fuentesSkills) })
 
 function installedSkills() {
   const out = new Map()
@@ -167,7 +195,7 @@ async function atenderSkillOp(op) {
 // ---------- Tareas para un departamento: si nadie del equipo humano la toma, va a un agente ----------
 const reclamando = new Set()
 async function repartirTareasDeDepartamento() {
-  const espera = Number(loadNegocio().esperaDepartamentoMin ?? 30)
+  const espera = Number(ajustes().esperaDepartamentoMin ?? 30)
   for (const t of tasks.values()) {
     if (!t.paraDepartamento || t.asignado || t.estado !== 'pendiente' || !t.departamentoId || reclamando.has(t.id)) continue
     const delDepto = [...agents.values()].filter(a => a.active !== false && (a.departamentoId || perfilDe(a).departamento) === t.departamentoId)
@@ -212,7 +240,7 @@ function candidatas() {
 // Llena los cupos libres: máximo una tarea por agente y N por motor (negocio.json → paralelo)
 function pump() {
   if (stopping) return
-  const cupos = { claude: 1, antigravity: 1, codex: 1, gemini: 1, api: 2, ...(loadNegocio().paralelo || {}) }
+  const cupos = { ...CUPOS_BASE, ...(ajustes().paralelo || {}) }
   const usados = (m) => [...enCurso.values()].filter(x => x.motor === m).length
   for (const t of candidatas()) {
     const agent = agents.get(t.asignado)
@@ -468,7 +496,7 @@ async function createDelegatedTasks(text, origin) {
 }
 
 // ---------- Tareas programadas (colección schedules) ----------
-const ZONA = () => loadNegocio().zonaHoraria || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+const ZONA = () => ajustes().zonaHoraria || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
 // Bloque ```programar``` del coordinador → rutinas en schedules (solo para agentes, sin permisos extra)
 async function createSchedulesFromText(text, origin) {
@@ -782,7 +810,7 @@ const motoresMgr = crearMotores({ ROOT, log: (...a) => log(...a), timeoutMs: RUN
 const MOTORES_CLI = ['claude', 'antigravity', 'codex', 'gemini']
 async function actualizarEstadoMotores() {
   const [codex, antigravity] = await Promise.all([motoresMgr.estadoCodex(), motoresMgr.estadoAntigravity()])
-  estadoMotores = { codex, gemini: motoresMgr.estadoGemini(env), antigravity }
+  estadoMotores = { codex, gemini: motoresMgr.estadoGemini({ GEMINI_API_KEY: secreto('GEMINI_API_KEY') }), antigravity }
 }
 // Reglas de motor/CLAUDE.md: Claude Code las lee solo; a Codex y Gemini se las damos en la instrucción
 const reglasAgentes = () => { try { return readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8') } catch { return '' } }
@@ -810,7 +838,7 @@ function motorDisponible(m, agent, t) {
   if (m === 'claude') return true
   if (m === 'codex') return !!estadoMotores.codex?.conectado && !soloClaude(agent, t)
   if (m === 'antigravity') return !!estadoMotores.antigravity?.conectado && !soloClaude(agent, t)
-  if (m === 'gemini') return !!estadoMotores.gemini?.conectado && !soloClaude(agent, t) && (loadNegocio().geminiDePago === true || permiteGratis(t))
+  if (m === 'gemini') return !!estadoMotores.gemini?.conectado && !soloClaude(agent, t) && (ajustes().geminiDePago === true || permiteGratis(t))
   return false
 }
 
@@ -825,12 +853,12 @@ async function correrMotor(m, agent, prompt, cwd, opts, t) {
   const web = toolsFor(agent, t).includes('WebSearch')
   if (m === 'antigravity') {
     // Modelo elegido en el agente si es de Antigravity; si no, el que tenga por defecto
-    const modelo = agent?.modelo?.proveedor === 'antigravity' ? agent.modelo.nombre : (loadNegocio().modeloAntigravity || '')
+    const modelo = agent?.modelo?.proveedor === 'antigravity' ? agent.modelo.nombre : (ajustes().modeloAntigravity || '')
     return motoresMgr.antigravity(completo, cwd, { modelo })
   }
   return m === 'codex'
     ? motoresMgr.codex(completo, cwd, { web })
-    : motoresMgr.gemini(completo, cwd, { env: env.GEMINI_API_KEY ? { GEMINI_API_KEY: env.GEMINI_API_KEY } : {} })
+    : motoresMgr.gemini(completo, cwd, { env: secreto('GEMINI_API_KEY') ? { GEMINI_API_KEY: secreto('GEMINI_API_KEY') } : {} })
 }
 
 async function runModel(agent, prompt, cwd, opts, t) {
@@ -841,7 +869,7 @@ async function runModel(agent, prompt, cwd, opts, t) {
     return { ...(await runApi(cfg, prompt)), motor: 'api' }
   }
   // Principal y después los de respaldo (negocio.json → respaldo), solo si están conectados y sirven para la tarea
-  const respaldo = lista(loadNegocio().respaldo).length ? lista(loadNegocio().respaldo) : MOTORES_CLI
+  const respaldo = lista(ajustes().respaldo).length ? lista(ajustes().respaldo) : MOTORES_CLI
   const cadena = [...new Set([principal, ...respaldo])].filter(m => MOTORES_CLI.includes(m))
   let ultimo = null
   for (const m of cadena) {
@@ -1441,16 +1469,9 @@ async function main() {
     snap.forEach(d => syncApproved({ id: d.id, ...d.data() }))
   }, e => log('Error leyendo aprobadas:', e.code || e.message))
 
-  if (env.TELEGRAM_BOT_TOKEN && !env.TELEGRAM_BOT_TOKEN.startsWith('PEGA_AQUI')) {
-    let voz = null
-    try { voz = await import('./voz.mjs'); voz.warmUp(log) } catch { log('Notas de voz desactivadas (faltan paquetes: npm install)') }
-    telegram = startTelegram({
-      token: env.TELEGRAM_BOT_TOKEN, ownerId: env.TELEGRAM_OWNER_ID, log, onMessage: handleTelegram, onReply: handleTelegramReply,
-      transcribe: voz ? (bytes) => voz.transcribe(bytes, log) : null,
-    })
-  } else {
-    log('Telegram desactivado (falta TELEGRAM_BOT_TOKEN en .env)')
-  }
+  // Ajustes y claves desde el panel: se aplican al cambiar, sin reiniciar el motor
+  await escucharPanel()
+  await reiniciarTelegram()
 
   await actualizarEstadoMotores().catch(() => {})
   log('Motores: Claude Code' + Object.entries(estadoMotores).map(([k, v]) => ` · ${k}: ${v?.conectado ? 'conectado' : 'sin sesión'}`).join(''))
@@ -1460,6 +1481,53 @@ async function main() {
   setInterval(repartirTareasDeDepartamento, 60_000)
   setInterval(revisarProgramadas, 60_000)
   log('Motor encendido. Esperando tareas de los agentes… (Ctrl + C para apagar)')
+}
+
+// ---------- Configuración desde el panel (config/motor y secretos) ----------
+function escucharPanel() {
+  const primera = []
+  const esperar = () => { let listo; primera.push(new Promise(r => { listo = r; setTimeout(r, 10_000) })); return () => listo() }
+  const okConfig = esperar(), okSecretos = esperar()
+  onSnapshot(doc(db, 'config', 'motor'), d => {
+    configPanel = d.data() || {}
+    okConfig()
+    heartbeat()
+  }, e => { log('Ajustes del panel sin acceso; uso negocio.json:', e.code || e.message); okConfig() })
+  let previo = null
+  onSnapshot(collection(db, 'secretos'), snap => {
+    secretosPanel.clear()
+    snap.forEach(d => { const v = String(d.data()?.valor || '').trim(); if (v) secretosPanel.set(d.id, v) })
+    okSecretos()
+    const firma = JSON.stringify(SECRETOS.map(secreto))
+    if (previo !== null && firma !== previo) {
+      log('Claves actualizadas desde el panel')
+      reiniciarTelegram()
+      actualizarEstadoMotores().catch(() => {}).then(() => heartbeat())
+    }
+    previo = firma
+  }, e => { log('Claves del panel sin acceso (publica las reglas de Firestore); uso motor/.env:', e.code || e.message); okSecretos() })
+  return Promise.all(primera)
+}
+
+let vozMod
+let telegramFirma = ''
+async function reiniciarTelegram() {
+  const token = secreto('TELEGRAM_BOT_TOKEN')
+  const ownerId = String(ajustes().telegramOwnerId || deEnv('TELEGRAM_OWNER_ID') || '')
+  const firma = `${token}|${ownerId}`
+  if (telegram && firma === telegramFirma) return
+  telegram?.stop()
+  telegram = null
+  telegramFirma = firma
+  if (!token) { log('Telegram desactivado (falta el token: Agencia → Motor en el panel, o TELEGRAM_BOT_TOKEN en .env)'); return }
+  if (vozMod === undefined) {
+    try { vozMod = await import('./voz.mjs'); vozMod.warmUp(log) } catch { vozMod = null; log('Notas de voz desactivadas (faltan paquetes: npm install)') }
+  }
+  const voz = vozMod
+  telegram = startTelegram({
+    token, ownerId, log, onMessage: handleTelegram, onReply: handleTelegramReply,
+    transcribe: voz ? (bytes) => voz.transcribe(bytes, log) : null,
+  })
 }
 
 async function shutdown() {

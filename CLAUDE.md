@@ -55,6 +55,12 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   Antigravity: instrucción en `.instrucciones-agente.md`, permisos en `.agy-ajustes.json`
   (`write_file(<tarea>/salida)`, `deny command(*)`); en `/tmp` agy escribe en cualquier lado, por eso las tareas
   viven en `motor/trabajos/`.
+- Configuración desde el panel (Agencia → Motor, `app/src/pages/AgenciaMotor.jsx`): ajustes en `config/motor`
+  (`paralelo`, `respaldo`, `esperaDepartamentoMin`, `zonaHoraria`, `fuentesSkills`, `modeloAntigravity`, `geminiDePago`,
+  `telegramOwnerId`) y claves en `secretos/{NOMBRE}` (`{ valor }`, escribe el admin, solo lee el robot). En el motor,
+  `ajustes()` = `negocio.json` + lo que defina el panel, y `secreto(k)` = panel o `motor/.env`; se escuchan en vivo y
+  Telegram se reinicia si cambia su token. El latido publica `secretos` (origen: panel/env/null, nunca el valor) y
+  `ajustesEfectivos`. Para una clave nueva: agrégala a `SECRETOS` (worker) y `SECRETOS_MOTOR` (panel).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
 
