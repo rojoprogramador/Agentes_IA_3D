@@ -11,8 +11,8 @@
 
 import { lanzar, matar } from './procesos.mjs'
 import { spawn, execFile } from 'node:child_process'
-import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync, readdirSync, statSync, copyFileSync } from 'node:fs'
+import { join, resolve, extname, basename } from 'node:path'
 import os from 'node:os'
 
 const LIMITE = /usage limit|rate.?limit|quota|exhausted|RESOURCE_EXHAUSTED|\b429\b|hit your limit|too many requests|insufficient_quota/i
@@ -80,23 +80,42 @@ const agyBin = () => {
   const local = join(os.homedir(), '.local', 'bin', IS_WIN ? 'agy.exe' : 'agy')
   return existsSync(local) ? local : 'agy'
 }
-async function antigravity(prompt, cwd, { modelo, env } = {}) {
+// mcp (opcional): { command, args, env, herramientas } → servidor de medios del motor solo para esta tarea.
+// Se declara como plugin del proyecto en <tarea>/.agents/plugins/ (no toca la configuración global de agy) y
+// se permite herramienta por herramienta: mcp(agentes-media_agentes-media/<herramienta>).
+const AGY_MCP = 'agentes-media'
+async function antigravity(prompt, cwd, { modelo, env, mcp } = {}) {
   const salida = resolve(cwd, 'salida')
   mkdirSync(salida, { recursive: true })
   const instr = join(cwd, '.instrucciones-agente.md')
   const ajustes = join(cwd, '.agy-ajustes.json')
+  const plugin = join(cwd, '.agents')
+  const permitidos = [`write_file(${salida})`]
+  if (mcp?.herramientas?.length) {
+    const dir = join(plugin, 'plugins', AGY_MCP)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'plugin.json'), JSON.stringify({ name: AGY_MCP }))
+    writeFileSync(join(dir, 'mcp_config.json'), JSON.stringify({ mcpServers: { [AGY_MCP]: { command: mcp.command, args: mcp.args || [], env: mcp.env || {} } } }))
+    for (const h of mcp.herramientas) permitidos.push(`mcp(${AGY_MCP}_${AGY_MCP}/${h})`)
+  }
   writeFileSync(instr, prompt)
-  writeFileSync(ajustes, JSON.stringify({ permissions: { allow: [`write_file(${salida})`], deny: ['command(*)'] } }))
+  writeFileSync(ajustes, JSON.stringify({ permissions: { allow: permitidos, deny: ['command(*)'] } }))
   const args = [
     '--output-format', 'json', '--sandbox', '--settings', ajustes,
     ...(modelo ? ['--model', modelo] : []),
     '-p=Lee el archivo .instrucciones-agente.md de esta carpeta y sigue sus instrucciones al pie de la letra. Tu respuesta final es el entregable.',
   ]
   const r = await correrAgy(args, cwd, env)
-  rmSync(instr, { force: true }); rmSync(ajustes, { force: true })
+  rmSync(instr, { force: true }); rmSync(ajustes, { force: true }); rmSync(plugin, { recursive: true, force: true })
   let j = null
   try { j = JSON.parse(r.out.slice(r.out.indexOf('{'))) } catch {}
-  const result = String(j?.response || '').trim()
+  let result = String(j?.response || '').trim()
+  // Imágenes generadas: agy las guarda en su carpeta de la conversación; el motor las copia a salida/
+  const imagenes = copiarImagenesAgy(j?.conversation_id, salida)
+  if (imagenes.length) {
+    log(`  🖼 Antigravity generó ${imagenes.length} imagen(es): ${imagenes.join(', ')}`)
+    result += `\n\nImágenes generadas (copiadas a la entrega): ${imagenes.join(', ')}`
+  }
   const negadas = (j?.denied_actions || []).map(d => d.display_name || d.action)
   const err = negadas.length && !result
     ? `Antigravity intentó usar ${[...new Set(negadas)].join(', ')} sin permiso y se detuvo (solo puede escribir en salida/ y no puede usar la terminal).`
@@ -105,6 +124,28 @@ async function antigravity(prompt, cwd, { modelo, env } = {}) {
     code: result ? 0 : (r.code || 1), json: result ? { result, total_cost_usd: 0, num_turns: j?.num_turns || 0 } : null,
     raw: r.out, err, limite: !result && LIMITE.test(r.err + r.out), permisoDenegado: !result && negadas.length > 0,
   }
+}
+const IMAGEN = /\.(png|jpe?g|webp|gif)$/i
+function copiarImagenesAgy(conversacion, salida) {
+  if (!conversacion || !/^[\w-]+$/.test(conversacion)) return []
+  const raiz = join(os.homedir(), '.gemini', 'antigravity-cli', 'brain', conversacion)
+  const copiadas = []
+  const recorrer = (dir, prof = 0) => {
+    let items = []
+    try { items = readdirSync(dir) } catch { return }
+    for (const n of items) {
+      const f = join(dir, n)
+      let st
+      try { st = statSync(f) } catch { continue }
+      if (st.isDirectory()) { if (prof < 3) recorrer(f, prof + 1); continue }
+      if (!IMAGEN.test(n) || st.size > 30 * 1024 * 1024) continue
+      let dest = join(salida, basename(n))
+      for (let i = 2; existsSync(dest); i++) dest = join(salida, `${basename(n, extname(n))}-${i}${extname(n)}`)
+      try { copyFileSync(f, dest); copiadas.push(basename(dest)) } catch {}
+    }
+  }
+  recorrer(raiz)
+  return copiadas
 }
 function correrAgy(args, cwd, env) {
   return new Promise((done) => {
