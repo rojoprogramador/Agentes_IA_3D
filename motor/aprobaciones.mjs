@@ -19,7 +19,7 @@ export const SENSIBLES_BASE = [
   'mcp__magnific__images_generate', 'mcp__magnific__images_upscale', 'mcp__magnific__images_expand',
   'mcp__magnific__images_remove_background', 'mcp__magnific__images_replace_background', 'mcp__magnific__images_restyle',
   'mcp__magnific__images_reimagine', 'mcp__magnific__images_relight', 'mcp__magnific__images_variations',
-  'mcp__magnific__design_auto_resize',
+  'mcp__magnific__design_auto_resize', 'mcp__agentes-seguridad__run_scan',
 ]
 
 export const esSensible = (tool, patrones = SENSIBLES_BASE) =>

@@ -1104,13 +1104,22 @@ async function instalarSkillPropuesta(pr) {
 }
 
 // ---------- Claude Code ----------
-// Configuración MCP del servidor de auditoría (se escribe una vez; solo trae la ruta del servidor, sin claves)
-let rutaMcpAuditoria = ''
-function mcpAuditoria() {
-  if (rutaMcpAuditoria) return rutaMcpAuditoria
-  rutaMcpAuditoria = join(ROOT, 'logs', 'mcp-auditoria.json')
-  writeFileSync(rutaMcpAuditoria, JSON.stringify({ mcpServers: { 'agentes-auditoria': { type: 'stdio', command: process.execPath, args: [join(ROOT, 'auditoria-server.mjs')] } } }, null, 2))
-  return rutaMcpAuditoria
+// Servidores MCP propios que se declaran por tarea con --mcp-config (B5 auditoría, B6 seguridad).
+// Cada archivo solo trae la ruta del servidor, sin claves (las claves y el alcance van por variables de entorno).
+const SERVIDORES_MCP = { 'agentes-auditoria': 'auditoria-server.mjs', 'agentes-seguridad': 'seguridad-server.mjs' }
+const rutasMcp = new Map()
+function mcpConfigPara(tools) {
+  const out = []
+  for (const [nombre, archivo] of Object.entries(SERVIDORES_MCP)) {
+    if (!tools.some(x => x.startsWith(`mcp__${nombre}__`))) continue
+    if (!rutasMcp.has(nombre)) {
+      const ruta = join(ROOT, 'logs', `mcp-${nombre}.json`)
+      writeFileSync(ruta, JSON.stringify({ mcpServers: { [nombre]: { type: 'stdio', command: process.execPath, args: [join(ROOT, archivo)] } } }, null, 2))
+      rutasMcp.set(nombre, ruta)
+    }
+    out.push(`"${rutasMcp.get(nombre)}"`)
+  }
+  return out
 }
 
 function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '', agentId = '' } = {}) {
@@ -1121,7 +1130,10 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     const { automaticas, sensibles } = separarHerramientas(tools, sensiblesCatalogo())
     const ejecucion = sensibles.length && servidorAprobaciones ? registrarEjecucion({ tareaId, agentId, sensibles }) : ''
     // B5: el servidor de auditoría (SEO técnico y QA) se declara solo para quien tiene esas herramientas
-    const mcpExtra = tools.some(x => x.startsWith('mcp__agentes-auditoria__')) ? [`"${mcpAuditoria()}"`] : []
+    const mcpExtra = mcpConfigPara(tools)
+    // B6: el alcance de seguridad del cliente de ESTA tarea (lo edita solo un admin); sin tarea o sin cliente, nada
+    const conSeguridad = tools.some(x => x.startsWith('mcp__agentes-seguridad__'))
+    const alcanceCliente = conSeguridad && tareaId ? clientFor(tasks.get(tareaId))?.alcanceAutorizado : null
     const args = [
       // stream-json: además del resultado final (última línea, igual que con json) trae cada herramienta usada;
       // el curador de skills (B3) cuenta ahí qué skills se usan
@@ -1140,6 +1152,7 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     // AGENTES_CLIENTE / AGENTES_TAREA: buscar_historial solo ve el historial de este cliente (vacío = sin historial)
     const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: clienteId, AGENTES_TAREA: tareaId,
       ...(mcpExtra.length && secreto('PAGESPEED_API_KEY') ? { PAGESPEED_API_KEY: secreto('PAGESPEED_API_KEY') } : {}),
+      ...(conSeguridad ? { AGENTES_ALCANCE: alcanceCliente ? JSON.stringify(alcanceCliente) : '', AGENTES_ZONA: ZONA() } : {}),
       ...(ejecucion ? { AGENTES_EJECUCION: ejecucion, AGENTES_APROBACION_URL: servidorAprobaciones.url, AGENTES_APROBACION_TOKEN: servidorAprobaciones.token, MCP_TOOL_TIMEOUT: String(TIEMPO_APROBACION_MS + 60_000) } : {}) }
     if (planValido(ajustes().planClaude) === 'api') { if (secreto('ANTHROPIC_API_KEY')) envClaude.ANTHROPIC_API_KEY = secreto('ANTHROPIC_API_KEY') }
     else delete envClaude.ANTHROPIC_API_KEY
@@ -1240,7 +1253,7 @@ function motorDe(agent, t) {
 }
 // Herramientas que solo existen en Claude Code (servidores MCP: medios, video, Magnific, Gmail, Drive…)
 // (Leer Drive no cuenta: es opcional y Codex/Gemini trabajan sin él)
-const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria']
+const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad']
 // Antigravity también puede: las herramientas de medios del motor (entregas y edición de video, conectadas por
 // tarea como plugin MCP) e imágenes con su propio generador en lugar de Magnific.
 const GRUPOS_ANTIGRAVITY = ['entregas', 'editor_video', 'magnific_imagenes']

@@ -46,6 +46,15 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     alcanceNotas: c.alcanceAutorizado?.notas || '',
     autorizadoPor: c.alcanceAutorizado?.autorizadoPor || '',
     alcanceFecha: c.alcanceAutorizado?.fecha || '',
+    alcanceIps: toLines(c.alcanceAutorizado?.ips),
+    subdominios: c.alcanceAutorizado?.subdominios === true,
+    cargoFirmante: c.alcanceAutorizado?.cargo || '',
+    documento: c.alcanceAutorizado?.documento || '',
+    vigenciaDesde: c.alcanceAutorizado?.vigenciaDesde || c.alcanceAutorizado?.fecha || '',
+    vigenciaHasta: c.alcanceAutorizado?.vigenciaHasta || '',
+    ventanaDias: c.alcanceAutorizado?.ventana?.dias || [],
+    ventanaDesde: c.alcanceAutorizado?.ventana?.desde || '',
+    ventanaHasta: c.alcanceAutorizado?.ventana?.hasta || '',
     aprendizajes: c.aprendizajes || [],
   })
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -57,6 +66,10 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
   const handleSave = async () => {
     const nombre = form.nombre.trim()
     if (!nombre) { showToast('El cliente necesita un nombre', 'error'); return }
+    if (form.vigenciaDesde && form.vigenciaHasta) {
+      const dias = (Date.parse(form.vigenciaHasta) - Date.parse(form.vigenciaDesde)) / 86400000
+      if (dias < 0 || dias > 90) { showToast('La vigencia del alcance debe ser de 0 a 90 días (para más, se firma otra autorización)', 'error'); return }
+    }
     setSaving(true)
     // Link de Drive o ID: se guarda solo el ID de la carpeta
     const folderId = (form.driveFolderId.match(/folders\/([\w-]+)/)?.[1] || form.driveFolderId).trim()
@@ -75,6 +88,9 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       alcanceAutorizado: {
         dominios: fromLines(form.dominios), repos: fromLines(form.alcanceRepos), notas: form.alcanceNotas.trim(),
         autorizadoPor: form.autorizadoPor.trim(), fecha: form.alcanceFecha,
+        ips: fromLines(form.alcanceIps), subdominios: form.subdominios, cargo: form.cargoFirmante.trim(), documento: form.documento.trim(),
+        vigenciaDesde: form.vigenciaDesde, vigenciaHasta: form.vigenciaHasta,
+        ventana: { dias: form.ventanaDias, desde: form.ventanaDesde, hasta: form.ventanaHasta },
       },
       aprendizajes: form.aprendizajes,
       updatedAt: serverTimestamp(), updatedBy: userEmail,
@@ -186,17 +202,47 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
 
           {tab === 'alcance' && <>
             <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0 }}>
-              Solo para Seguridad y QA: los agentes se niegan a revisar algo que no esté en esta lista.
+              Autorización de pruebas de seguridad (plantilla en docs/plantillas/autorizacion-pruebas-seguridad.md, revisada
+              por un abogado). El motor rechaza cualquier escaneo fuera de esta lista, sin firmante, sin documento, fuera de la
+              vigencia o, si toca el sitio en vivo, fuera de la ventana. Solo pruebas pasivas.
             </p>
             <div className="form-row">
-              {field('Dominios autorizados', 'dominios', { area: true, rows: 3, hint: 'Uno por línea.' })}
-              {field('Repositorios autorizados', 'alcanceRepos', { area: true, rows: 3, hint: 'Uno por línea.' })}
+              {field('Dominios autorizados', 'dominios', { area: true, rows: 3, hint: 'Uno por línea. *.ejemplo.com para todos sus subdominios.' })}
+              {field('Repositorios autorizados', 'alcanceRepos', { area: true, rows: 3, hint: 'URL https, uno por línea.' })}
             </div>
-            {field('Notas del alcance', 'alcanceNotas', { area: true, rows: 2 })}
             <div className="form-row">
-              {field('Autorizado por', 'autorizadoPor')}
-              {field('Fecha de autorización', 'alcanceFecha', { type: 'date' })}
+              {field('IPs o rangos autorizados', 'alcanceIps', { area: true, rows: 2, hint: 'Una por línea (203.0.113.10 o 203.0.113.0/28).' })}
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input type="checkbox" checked={form.subdominios} onChange={e => set('subdominios', e.target.checked)} /> Incluye los subdominios de cada dominio
+                </label>
+              </div>
             </div>
+            <div className="form-row">
+              {field('Vigente desde', 'vigenciaDesde', { type: 'date' })}
+              {field('Vigente hasta', 'vigenciaHasta', { type: 'date', hint: 'Máximo 90 días.' })}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Ventana para pruebas sobre el sitio en vivo (hora local)</label>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
+                {['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'].map(d => (
+                  <label key={d}><input type="checkbox" checked={form.ventanaDias.includes(d)}
+                    onChange={() => set('ventanaDias', form.ventanaDias.includes(d) ? form.ventanaDias.filter(x => x !== d) : [...form.ventanaDias, d])} /> {d}</label>
+                ))}
+                <input className="form-input" type="time" style={{ width: 120 }} value={form.ventanaDesde} onChange={e => set('ventanaDesde', e.target.value)} />
+                a
+                <input className="form-input" type="time" style={{ width: 120 }} value={form.ventanaHasta} onChange={e => set('ventanaHasta', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-row">
+              {field('Firmante (autorizado por)', 'autorizadoPor')}
+              {field('Cargo del firmante', 'cargoFirmante', { placeholder: 'Representante legal, CTO…' })}
+            </div>
+            <div className="form-row">
+              {field('Documento firmado (link)', 'documento', { placeholder: 'https://drive.google.com/…' })}
+              {field('Fecha de la firma', 'alcanceFecha', { type: 'date' })}
+            </div>
+            {field('Fuera de alcance y notas', 'alcanceNotas', { area: true, rows: 2 })}
           </>}
 
           {tab === 'aprendizajes' && (
