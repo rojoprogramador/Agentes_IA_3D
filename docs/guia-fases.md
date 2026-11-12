@@ -48,3 +48,44 @@ en `motor/worker.mjs`, rol `paid_media` en `roles/catalogo.json`, ficha del clie
 **Verificado.** 4 pruebas nuevas (normalización, GAQL a prueba de inyección, auditoría con 5 tipos de hallazgo) y
 prueba de punta a punta contra Google Ads y Meta falsos (OAuth, developer token, insights, tope al 93 %).
 **Falta**: probar con cuentas reales (requiere developer token aprobado y token de Meta).
+
+---
+
+## C2 · Email y CRM
+
+**Qué es.** Un agente `email_marketing` que diseña secuencias (bienvenida, nutrición, reactivación) y, si tienes
+**Listmonk** (gratis, se instala en tu servidor), deja cada correo como **campaña en borrador**. No existe ninguna
+herramienta de envío: el envío lo das tú en Listmonk.
+
+**Recorrido.**
+```
+Tarea "Secuencia de correos" → agente email_marketing
+  entornoPorCliente(): URL de Listmonk (config/motor.email) + usuario de API (secreto LISTMONK_API)
+                       + SOLO las listas de este cliente (clients.email.listas)
+  email-server.mjs (MCP agentes-email)
+    email_listas          → listas del cliente
+    email_campanas        → campañas recientes en sus listas (para no repetir)
+    email_crear_borrador  → POST /api/campaigns (queda "draft"); valida listas, asunto y limpia el HTML
+  Respuesta con la secuencia completa → tú revisas y envías desde Listmonk
+```
+
+**Dónde mirar.** `motor/email.mjs`, `motor/email-server.mjs`, rol `email_marketing`, Agencia → Motor → *Email
+(Listmonk)*, ficha del cliente → *Email*.
+
+**Por qué así.**
+- **Borrador, nunca envío**: un correo masivo enviado por error no se puede deshacer y afecta la reputación del
+  dominio. Por eso la herramienta de envío ni existe.
+- **Listas por cliente**: el agente de un cliente no puede ver ni usar las listas de otro (se comprobó con una lista
+  ajena: error).
+- **HTML limpio**: se quitan scripts, iframes y `on…=` del correo antes de guardarlo.
+- **CRM por MCP**: HubSpot y Twenty tienen servidores MCP oficiales; se conectan en Claude y se agregan al agente en
+  *Herramientas extra*, sin código nuevo.
+- **Ley 1581 (datos personales)**: solo listas con consentimiento y siempre con enlace de baja `{{ UnsubscribeURL }}`.
+
+**Conceptos.**
+- **Listmonk**: gestor de listas y campañas de correo, de código abierto. Se conecta a un servicio de envío (SMTP, SES).
+- **Usuario de API**: credencial `usuario:token` de Listmonk solo para integraciones (cabecera `Authorization: token …`).
+- **Preheader**: la línea que se ve junto al asunto en la bandeja; casi tan importante como el asunto.
+
+**Verificado.** 4 pruebas nuevas; punta a punta contra un Listmonk falso: solo ve sus listas, filtra campañas ajenas,
+rechaza listas de otro cliente, crea el borrador y nunca llama a un endpoint de envío.

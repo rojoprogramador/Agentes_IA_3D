@@ -11,6 +11,7 @@ const TABS = [
   { id: 'objetivos', label: 'Objetivos' },
   { id: 'activos', label: 'Activos' },
   { id: 'analitica', label: 'Analítica y anuncios' },
+  { id: 'email', label: 'Email' },
   { id: 'alcance', label: 'Alcance' },
   { id: 'aprendizajes', label: 'Aprendizajes' },
 ]
@@ -64,6 +65,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     metaCuenta: c.ads?.metaAdAccountId || '',
     topeAds: c.ads?.topeMensual ? String(c.ads.topeMensual) : '',
     credGads: '', tokenMeta: '',
+    listasEmail: (c.email?.listas || []).join(', '),
   })
   // Estado de la credencial de Google (lo publica el motor: solo el correo, nunca la clave)
   const [estadoGoogle, setEstadoGoogle] = useState(null)
@@ -130,6 +132,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       aprendizajes: form.aprendizajes,
       analitica: { ga4PropertyId: ga4, gscSitio: gsc },
       ads: { googleAdsCustomerId: gadsCid, metaAdAccountId: metaCuenta, topeMensual: topeAds },
+      email: { listas: [...new Set(form.listasEmail.split(/[\s,]+/).map(Number).filter(n => Number.isInteger(n) && n > 0))] },
       updatedAt: serverTimestamp(), updatedBy: userEmail,
     }
     delete data.id
@@ -282,6 +285,15 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
               {field('Credencial propia de Google Ads (opcional)', 'credGads', { area: true, rows: 2, placeholder: '{"developer_token": …}', hint: 'No se vuelve a mostrar.' })}
               {field('Token propio de Meta Ads (opcional)', 'tokenMeta', { area: true, rows: 2, hint: 'No se vuelve a mostrar.' })}
             </div>
+          </>}
+
+          {tab === 'email' && <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0 }}>
+              Listas de Listmonk de este cliente: el agente de email solo puede verlas y crear borradores en ellas. Usa solo
+              listas con consentimiento de los suscriptores (Ley 1581). Para un CRM (HubSpot, Twenty) conecta su servidor MCP
+              y agrégalo al agente en Herramientas extra.
+            </p>
+            {field('IDs de listas de Listmonk', 'listasEmail', { placeholder: '3, 7', hint: 'Los ves en Listmonk → Listas (columna ID).' })}
           </>}
 
           {tab === 'alcance' && <>
