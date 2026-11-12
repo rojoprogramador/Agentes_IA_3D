@@ -274,6 +274,13 @@ En **Agencia → Skills**:
    vez. Con fuente desconocida o alertas, tienes que confirmar que confías en ella.
 4. **Buscar actualización** y **Quitar** en la lista de instaladas.
 
+**Curador de skills.** El motor cuenta cuántas veces usa cada skill (aparece en la lista de instaladas). Una vez
+por semana, cuando lleva 2 horas sin tareas, revisa las que nadie usa: a los 14 días sin uso pasan a **inactiva**
+(solo un aviso) y a los 30 se **archivan** en `motor/skills-archivo/` (dejan de cargarse, no se borran y se
+restauran con un clic). Nunca toca las **fijadas** (📌), las asignadas a un agente ni las de clientes con rutinas, y
+antes de archivar guarda una copia en `motor/logs/respaldos-skills/`. Viene en **Solo simular**: te informa (aquí y
+por Telegram) qué haría, sin mover nada, hasta que lo desactives. Desde la terminal: `node curador.mjs --simular`.
+
 Las fuentes confiables por defecto son `anthropics/skills`, `coreyhaines31/marketingskills`, `heygen-com/hyperframes`,
 `remotion-dev/skills` y las de `vercel-labs`. Agrega las tuyas en `motor/negocio.json → fuentesSkills`.
 
@@ -320,6 +327,7 @@ más de 3 personas.
 | `firestore.rules` | Reglas de seguridad. En el repo lleva `__CORREO_ROBOT__`; `configurar.mjs` pone tu robot | Solo la plantilla |
 | `roles/catalogo.json` | Roles: misión, herramientas y forma de entrega | Sí |
 | `motor/.claude/skills/` | Skills instaladas y su origen (`skills-origen.json`) | No |
+| `motor/skills-archivo/` | Skills archivadas por el curador (se restauran desde el panel) | No |
 
 ## Problemas comunes
 
