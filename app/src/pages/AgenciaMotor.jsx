@@ -62,6 +62,7 @@ const desde = (c = {}, e = {}) => ({
   waPuerto: String(c.whatsapp?.puerto || 8790),
   waUrlFija: c.whatsapp?.urlFija || '',
   listmonkUrl: c.email?.listmonkUrl || '',
+  alertasActivo: c.alertas?.activo === true,
 })
 
 export default function AgenciaMotor() {
@@ -127,6 +128,7 @@ export default function AgenciaMotor() {
       await setDoc(doc(db, 'config', 'motor'), {
         aprendizaje: { activo: form.aprActivo, minTurnos, conClaude: form.aprConClaude, proveedorId: form.aprProveedorId, modelo: form.aprModelo.trim() },
         email: { listmonkUrl: form.listmonkUrl.trim().replace(/\/+$/, '') },
+        alertas: { activo: form.alertasActivo },
         whatsapp: { ...(panel?.whatsapp || {}), activo: form.waActivo, phoneNumberId: form.waPhoneNumberId.trim(), puerto: waPuerto, urlFija: form.waUrlFija.trim() },
         paralelo, respaldo: form.respaldo, esperaDepartamentoMin: espera,
         zonaHoraria: form.zonaHoraria.trim(), modeloAntigravity: form.modeloAntigravity.trim(), geminiDePago: form.geminiDePago,
@@ -209,6 +211,26 @@ export default function AgenciaMotor() {
       </div>
 
       <PermisosSiempre />
+
+      <div className="card">
+        <h3 style={{ marginTop: 0, fontSize: 15 }}>Alertas de caída (Uptime Kuma)</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0 }}>
+          Uptime Kuma vigila los sitios de tus clientes. Cuando uno cae, el motor te avisa por Telegram y crea una tarea urgente
+          para el agente con rol <em>DevOps y soporte</em>, que diagnostica desde afuera y propone el arreglo. Usa el mismo
+          puerto y túnel que WhatsApp.
+        </p>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+          <input type="checkbox" checked={form.alertasActivo} onChange={e => set('alertasActivo', e.target.checked)} /> Recibir alertas
+        </label>
+        {worker?.alertas?.activo && (
+          <div style={{ fontSize: 12.5, padding: 10, background: 'var(--bg-2)', borderRadius: 8, marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span>En Uptime Kuma → Notificaciones → <strong>Webhook</strong> (POST, JSON) pega:</span>
+            {worker.alertas.urlPublica && <code style={{ wordBreak: 'break-all' }}>{worker.alertas.urlPublica}</code>}
+            <code style={{ wordBreak: 'break-all' }}>{worker.alertas.urlLocal}</code>
+            <span style={nota}>La local sirve si Kuma corre en este mismo PC; la pública (túnel) si corre en otro lado. Incidentes abiertos: {worker.alertas.abiertas}.</span>
+          </div>
+        )}
+      </div>
 
       <div className="card">
         <h3 style={{ marginTop: 0, fontSize: 15 }}>Email (Listmonk)</h3>

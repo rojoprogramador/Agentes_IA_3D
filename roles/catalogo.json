@@ -47,7 +47,7 @@
     ],
     "auditoria": [
       "mcp__agentes-auditoria__pagespeed", "mcp__agentes-auditoria__rastrear_sitio", "mcp__agentes-auditoria__accesibilidad",
-      "mcp__agentes-auditoria__robots_y_sitemap", "mcp__agentes-auditoria__datos_estructurados", "mcp__agentes-auditoria__capturas"
+      "mcp__agentes-auditoria__robots_y_sitemap", "mcp__agentes-auditoria__datos_estructurados", "mcp__agentes-auditoria__capturas", "mcp__agentes-auditoria__diagnostico_sitio"
     ],
     "seguridad": ["mcp__agentes-seguridad__ver_alcance", "mcp__agentes-seguridad__run_scan"],
     "analitica": [
@@ -285,6 +285,21 @@
         "Cada correo: asunto (máx. 50 caracteres), preheader, cuerpo corto y escaneable, UN llamado a la acción y el enlace de baja {{ UnsubscribeURL }}.",
         "HTML de correo: tablas o divs simples con estilos en línea, ancho máximo 600 px, sin JavaScript ni formularios.",
         "Entrega en tu respuesta la secuencia completa (para cada correo: día de envío, asunto, preheader, cuerpo y llamado a la acción) y, si Listmonk está conectado, crea cada correo como BORRADOR con email_crear_borrador. Nunca digas que se envió: quedan en borrador para que el dueño los revise y los envíe."
+      ]
+    },
+    "devops": {
+      "nombre": "DevOps y soporte de sitios",
+      "departamento": "desarrollo",
+      "modelo": {"recomendado": "claude", "requiereHerramientas": true, "nota": "Necesita herramientas: diagnostica sitios desde afuera (DNS, HTTP, certificado, velocidad)."},
+      "descripcion": "Cuando un monitor avisa que un sitio cayó, diagnostica desde afuera y propone cómo arreglarlo. No toca servidores.",
+      "mision": "Ingeniero de soporte. Ante una caída o lentitud, mide desde afuera (DNS, respuesta HTTP, certificado, velocidad), identifica la causa más probable y entrega un plan concreto: qué hacer, quién lo hace (hosting, DNS, desarrollador), cuánto tarda y qué decirle al cliente. No tiene acceso a servidores ni cambia nada.",
+      "herramientas": ["web", "archivos", "skills", "auditoria"],
+      "maxTurns": 40,
+      "conectores": ["Uptime Kuma (opcional, gratis): avisa al motor cuando un sitio cae"],
+      "instrucciones": [
+        "Empieza con diagnostico_sitio sobre la URL de la tarea. Si responde bien ahora, dilo: puede haber sido intermitente; revisa certificado y tiempos.",
+        "Distingue: dominio que no resuelve (DNS o dominio vencido), certificado vencido o no confiable, error 5xx (servidor o aplicación), error 4xx (configuración), tiempo agotado (hosting caído o saturado).",
+        "Entrega corto y accionable: 1) qué falla y la evidencia medida; 2) causa más probable; 3) pasos concretos y quién los hace; 4) un mensaje breve para el cliente."
       ]
     },
     "revisor_calidad": {

@@ -208,3 +208,13 @@ export function crearCola(max) {
     siguiente()
   })
 }
+
+// ---------- Certificado TLS (diagnóstico de caídas, C3) ----------
+export function resumenCertificado(cert, { autorizado = true, error = '' } = {}, ahora = Date.now()) {
+  if (!cert || !cert.valid_to) return { ok: false, aviso: `No se obtuvo el certificado${error ? `: ${error}` : ''}` }
+  const vence = Date.parse(cert.valid_to)
+  const dias = Math.floor((vence - ahora) / 86400000)
+  const nombres = String(cert.subjectaltname || '').split(',').map(x => x.trim().replace(/^DNS:/, '')).filter(Boolean)
+  const aviso = dias < 0 ? `VENCIDO hace ${-dias} días` : !autorizado ? `No es de confianza: ${error}` : dias <= 14 ? `Vence en ${dias} días: renovar ya` : ''
+  return { ok: dias >= 0 && autorizado, emisor: cert.issuer?.O || cert.issuer?.CN || '', vence: new Date(vence).toISOString().slice(0, 10), diasRestantes: dias, nombres: nombres.slice(0, 10), aviso }
+}

@@ -120,10 +120,20 @@ export function crearClienteWhatsApp({ token, phoneNumberId, fetchFn = fetch, ba
 
 // ---------- Servidor del webhook (solo 127.0.0.1; el túnel lo publica) ----------
 // tokenVerificacion y appSecret son funciones para leer siempre el valor vigente del panel.
-export function crearServidorWebhook({ tokenVerificacion, appSecret, phoneNumberId = '', alMensaje, log = () => {} }) {
+// Desde C3 el mismo servidor atiende también /alertas/... (otrasRutas(ruta, cuerpo) → código HTTP); con
+// whatsappActivo false, /whatsapp responde 404.
+export function crearServidorWebhook({ tokenVerificacion, appSecret, phoneNumberId = '', alMensaje, log = () => {}, whatsappActivo = true, otrasRutas = null }) {
   return createServer((req, res) => {
     const u = new URL(req.url, 'http://localhost')
-    if (u.pathname !== '/whatsapp') { res.writeHead(404); res.end(); return }
+    if (otrasRutas && u.pathname.startsWith('/alertas/') && req.method === 'POST') {
+      const partes = []; let n = 0
+      req.on('data', d => { n += d.length; if (n > 200_000) req.destroy(); else partes.push(d) })
+      req.on('end', () => {
+        Promise.resolve().then(() => otrasRutas(u.pathname, Buffer.concat(partes))).then(c => { res.writeHead(c || 200); res.end() }, () => { res.writeHead(500); res.end() })
+      })
+      return
+    }
+    if (u.pathname !== '/whatsapp' || !whatsappActivo) { res.writeHead(404); res.end(); return }
     if (req.method === 'GET') { // verificación al configurar el webhook en Meta
       const c = respuestaVerificacion(u.searchParams, tokenVerificacion())
       res.writeHead(c ? 200 : 403, { 'Content-Type': 'text/plain' }); res.end(c || 'no')
