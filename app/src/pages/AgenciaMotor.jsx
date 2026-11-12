@@ -28,6 +28,7 @@ export const SECRETOS_MOTOR = [
   { id: 'WHATSAPP_TOKEN', nombre: 'Token de WhatsApp (Meta)', ayuda: 'Token permanente de un usuario del sistema (Meta Business → Usuarios del sistema) con permiso whatsapp_business_messaging.' },
   { id: 'WHATSAPP_APP_SECRET', nombre: 'App secret de Meta', ayuda: 'Meta for Developers → tu app → Configuración → Básica. El motor lo usa para comprobar que cada mensaje viene de Meta.' },
   { id: 'CLOUDFLARE_TUNNEL_TOKEN', nombre: 'Token del túnel de Cloudflare (opcional)', ayuda: 'Para una URL fija: Cloudflare → Zero Trust → Networks → Tunnels → crear túnel → token. Apunta el hostname a http://localhost:<puerto>.' },
+  { id: 'LISTMONK_API', nombre: 'Usuario de API de Listmonk', ayuda: 'usuario_api:token (Listmonk → Usuarios → nuevo usuario de tipo API). Los agentes solo crean borradores.' },
   { id: 'GOOGLE_ADS_CRED', nombre: 'Google Ads de la agencia (MCC)', ayuda: 'JSON {"developer_token","client_id","client_secret","refresh_token","login_customer_id"} de tu cuenta de administrador. Solo lectura: los agentes no cambian campañas.' },
   { id: 'META_ADS_TOKEN', nombre: 'Token de Meta Ads de la agencia', ayuda: 'Token de un usuario del sistema del Business Manager con permiso ads_read sobre las cuentas de tus clientes.' },
   { id: 'GOOGLE_ANALITICA_SA', nombre: 'Cuenta de servicio de Google (analítica de la agencia)', ayuda: 'JSON de una cuenta de servicio (Google Cloud → IAM → Cuentas de servicio → Claves). Cada cliente le da acceso de Lector en GA4 y en Search Console. Un cliente también puede tener la suya en su ficha.' },
@@ -60,6 +61,7 @@ const desde = (c = {}, e = {}) => ({
   waPhoneNumberId: c.whatsapp?.phoneNumberId || '',
   waPuerto: String(c.whatsapp?.puerto || 8790),
   waUrlFija: c.whatsapp?.urlFija || '',
+  listmonkUrl: c.email?.listmonkUrl || '',
 })
 
 export default function AgenciaMotor() {
@@ -117,12 +119,14 @@ export default function AgenciaMotor() {
     const waPuerto = Number(form.waPuerto)
     if (!Number.isInteger(waPuerto) || waPuerto < 1024 || waPuerto > 65535) { showToast('El puerto de WhatsApp va de 1024 a 65535', 'error'); return }
     if (form.waPhoneNumberId && !/^\d{6,20}$/.test(form.waPhoneNumberId.trim())) { showToast('El Phone number ID de WhatsApp son solo números (Meta → WhatsApp → Configuración de la API)', 'error'); return }
+    if (form.listmonkUrl.trim() && !/^https?:\/\/\S+$/.test(form.listmonkUrl.trim())) { showToast('La URL de Listmonk empieza por http:// o https://', 'error'); return }
     const minTurnos = Number(form.aprMinTurnos)
     if (!Number.isInteger(minTurnos) || minTurnos < 1) { showToast('Pasos mínimos para aprender: un número entero mayor que 0', 'error'); return }
     setGuardando(true)
     try {
       await setDoc(doc(db, 'config', 'motor'), {
         aprendizaje: { activo: form.aprActivo, minTurnos, conClaude: form.aprConClaude, proveedorId: form.aprProveedorId, modelo: form.aprModelo.trim() },
+        email: { listmonkUrl: form.listmonkUrl.trim().replace(/\/+$/, '') },
         whatsapp: { ...(panel?.whatsapp || {}), activo: form.waActivo, phoneNumberId: form.waPhoneNumberId.trim(), puerto: waPuerto, urlFija: form.waUrlFija.trim() },
         paralelo, respaldo: form.respaldo, esperaDepartamentoMin: espera,
         zonaHoraria: form.zonaHoraria.trim(), modeloAntigravity: form.modeloAntigravity.trim(), geminiDePago: form.geminiDePago,
@@ -205,6 +209,19 @@ export default function AgenciaMotor() {
       </div>
 
       <PermisosSiempre />
+
+      <div className="card">
+        <h3 style={{ marginTop: 0, fontSize: 15 }}>Email (Listmonk)</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0 }}>
+          El agente de email marketing deja las campañas en <strong>borrador</strong> en tu Listmonk; tú las envías desde allí.
+          Cada cliente solo usa las listas que le asignes en su ficha (pestaña Email).
+        </p>
+        <div className="form-group">
+          <label className="form-label">URL de Listmonk</label>
+          <input className="form-input" value={form.listmonkUrl} onChange={e => set('listmonkUrl', e.target.value)} placeholder="https://correo.tuagencia.com" />
+          <span style={nota}>El usuario de API va abajo en Claves.</span>
+        </div>
+      </div>
 
       <div className="card">
         <h3 style={{ marginTop: 0, fontSize: 15 }}>WhatsApp Business</h3>

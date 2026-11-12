@@ -75,7 +75,7 @@ const negocio = loadNegocio()
 
 // Ajustes del motor editables desde el panel (config/motor). Lo que el panel no define sale de negocio.json.
 const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId',
-  'planClaude', 'limitesClaude', 'programadasPrimeroOtros', 'aprendizaje', 'whatsapp']
+  'planClaude', 'limitesClaude', 'programadasPrimeroOtros', 'aprendizaje', 'whatsapp', 'email']
 let configPanel = {}
 let perfilDueno = {}   // config/perfilDueno: { entradas } (memoria del dueño, se edita en el panel)
 function ajustes() {
@@ -85,7 +85,7 @@ function ajustes() {
 }
 // Claves que el admin carga en el panel (colección secretos: el panel escribe, solo el motor lee).
 // Si no están en el panel, se usan las de motor/.env.
-const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'PAGESPEED_API_KEY', 'GOOGLE_ANALITICA_SA', 'WHATSAPP_TOKEN', 'WHATSAPP_APP_SECRET', 'CLOUDFLARE_TUNNEL_TOKEN', 'GOOGLE_ADS_CRED', 'META_ADS_TOKEN']
+const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'PAGESPEED_API_KEY', 'GOOGLE_ANALITICA_SA', 'WHATSAPP_TOKEN', 'WHATSAPP_APP_SECRET', 'CLOUDFLARE_TUNNEL_TOKEN', 'GOOGLE_ADS_CRED', 'META_ADS_TOKEN', 'LISTMONK_API']
 const secretosPanel = new Map()
 const deEnv = (k) => (env[k] && !String(env[k]).startsWith('PEGA_AQUI') ? env[k] : '')
 const secreto = (k) => secretosPanel.get(k) || deEnv(k)
@@ -1142,12 +1142,16 @@ function entornoPorCliente(tools, tareaId) {
     AGENTES_META_TOKEN: c?.ads?.metaAdAccountId ? delCliente('metaads', 'META_ADS_TOKEN') : '', AGENTES_META_CUENTA: c?.ads?.metaAdAccountId || '',
     AGENTES_ADS_TOPE: String(Number(c?.ads?.topeMensual) || ''), AGENTES_ZONA: ZONA(),
   })
+  if (usa('agentes-email')) Object.assign(env, { // C2: Listmonk de la agencia, solo las listas de este cliente
+    AGENTES_LISTMONK_URL: ajustes().email?.listmonkUrl || '', AGENTES_LISTMONK_CRED: secreto('LISTMONK_API') || '',
+    AGENTES_LISTMONK_LISTAS: c ? lista(c.email?.listas).join(',') : '',
+  })
   return env
 }
 
 // Servidores MCP propios que se declaran por tarea con --mcp-config (B5 auditoría, B6 seguridad).
 // Cada archivo solo trae la ruta del servidor, sin claves (las claves y el alcance van por variables de entorno).
-const SERVIDORES_MCP = { 'agentes-auditoria': 'auditoria-server.mjs', 'agentes-seguridad': 'seguridad-server.mjs', 'agentes-analitica': 'analitica-server.mjs', 'agentes-ads': 'ads-server.mjs' }
+const SERVIDORES_MCP = { 'agentes-auditoria': 'auditoria-server.mjs', 'agentes-seguridad': 'seguridad-server.mjs', 'agentes-analitica': 'analitica-server.mjs', 'agentes-ads': 'ads-server.mjs', 'agentes-email': 'email-server.mjs' }
 const rutasMcp = new Map()
 function mcpConfigPara(tools) {
   const out = []
@@ -1302,7 +1306,7 @@ function motorDe(agent, t) {
 }
 // Herramientas que solo existen en Claude Code (servidores MCP: medios, video, Magnific, Gmail, Drive…)
 // (Leer Drive no cuenta: es opcional y Codex/Gemini trabajan sin él)
-const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad', 'analitica', 'ads']
+const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad', 'analitica', 'ads', 'email']
 // Antigravity también puede: las herramientas de medios del motor (entregas y edición de video, conectadas por
 // tarea como plugin MCP) e imágenes con su propio generador en lugar de Magnific.
 const GRUPOS_ANTIGRAVITY = ['entregas', 'editor_video', 'magnific_imagenes']
