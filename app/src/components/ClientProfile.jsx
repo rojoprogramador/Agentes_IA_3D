@@ -10,7 +10,7 @@ const TABS = [
   { id: 'marca', label: 'Marca' },
   { id: 'objetivos', label: 'Objetivos' },
   { id: 'activos', label: 'Activos' },
-  { id: 'analitica', label: 'Analítica' },
+  { id: 'analitica', label: 'Analítica y anuncios' },
   { id: 'alcance', label: 'Alcance' },
   { id: 'aprendizajes', label: 'Aprendizajes' },
 ]
@@ -60,6 +60,10 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     ga4PropertyId: c.analitica?.ga4PropertyId || '',
     gscSitio: c.analitica?.gscSitio || '',
     credencialGoogle: '',
+    gadsCid: c.ads?.googleAdsCustomerId || '',
+    metaCuenta: c.ads?.metaAdAccountId || '',
+    topeAds: c.ads?.topeMensual ? String(c.ads.topeMensual) : '',
+    credGads: '', tokenMeta: '',
   })
   // Estado de la credencial de Google (lo publica el motor: solo el correo, nunca la clave)
   const [estadoGoogle, setEstadoGoogle] = useState(null)
@@ -85,6 +89,17 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     if (form.credencialGoogle.trim()) {
       try { credencial = JSON.parse(form.credencialGoogle) } catch { showToast('La credencial no es un JSON válido', 'error'); return }
       if (credencial.type !== 'service_account' || !credencial.client_email || !/BEGIN PRIVATE KEY/.test(credencial.private_key || '')) { showToast('El JSON debe ser la clave de una cuenta de servicio de Google', 'error'); return }
+    }
+    const gadsCid = form.gadsCid.replace(/-/g, '').trim()
+    if (gadsCid && !/^\d{10}$/.test(gadsCid)) { showToast('El ID de cliente de Google Ads son 10 dígitos (123-456-7890)', 'error'); return }
+    const metaCuenta = form.metaCuenta.replace(/^act_/, '').trim()
+    if (metaCuenta && !/^\d{5,20}$/.test(metaCuenta)) { showToast('La cuenta de Meta son solo números (act_…)', 'error'); return }
+    const topeAds = form.topeAds ? Number(form.topeAds) : 0
+    if (!Number.isFinite(topeAds) || topeAds < 0) { showToast('El tope de gasto debe ser un número', 'error'); return }
+    let credGads = null
+    if (form.credGads.trim()) {
+      try { credGads = JSON.parse(form.credGads) } catch { showToast('La credencial de Google Ads no es un JSON válido', 'error'); return }
+      if (!['developer_token', 'client_id', 'client_secret', 'refresh_token'].every(k => credGads[k])) { showToast('A la credencial de Google Ads le falta developer_token, client_id, client_secret o refresh_token', 'error'); return }
     }
     if (form.vigenciaDesde && form.vigenciaHasta) {
       const dias = (Date.parse(form.vigenciaHasta) - Date.parse(form.vigenciaDesde)) / 86400000
@@ -114,6 +129,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       },
       aprendizajes: form.aprendizajes,
       analitica: { ga4PropertyId: ga4, gscSitio: gsc },
+      ads: { googleAdsCustomerId: gadsCid, metaAdAccountId: metaCuenta, topeMensual: topeAds },
       updatedAt: serverTimestamp(), updatedBy: userEmail,
     }
     delete data.id
@@ -121,6 +137,8 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       await setDoc(doc(db, 'clients', c.id), data)
       // La credencial va a secretos/ (solo el motor la lee; el panel nunca la vuelve a mostrar)
       if (credencial) await setDoc(doc(db, 'secretos', `cliente_${c.id}_google`), { valor: JSON.stringify(credencial), updatedAt: serverTimestamp() })
+      if (credGads) await setDoc(doc(db, 'secretos', `cliente_${c.id}_googleads`), { valor: JSON.stringify(credGads), updatedAt: serverTimestamp() })
+      if (form.tokenMeta.trim()) await setDoc(doc(db, 'secretos', `cliente_${c.id}_metaads`), { valor: form.tokenMeta.trim(), updatedAt: serverTimestamp() })
       if (c.nombre && c.nombre !== nombre) await onRenamed?.(c.nombre, nombre)
       showToast('Ficha del cliente guardada')
       onClose()
@@ -246,6 +264,24 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
                 Quitar credencial propia
               </button>
             )}
+          </>}
+
+          {tab === 'analitica' && <>
+            <h4 style={{ margin: '12px 0 0', fontSize: 14 }}>Anuncios (solo lectura)</h4>
+            <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0 }}>
+              El agente de paid media lee estas cuentas para auditar y proponer; no cambia campañas. Si no pegas credenciales
+              propias, se usan las de la agencia (Agencia → Motor → Claves).
+              {estadoGoogle?.ads?.[c.id]?.length ? ` Credenciales propias cargadas: ${estadoGoogle.ads[c.id].join(', ')}.` : ''}
+            </p>
+            <div className="form-row">
+              {field('ID de cliente de Google Ads', 'gadsCid', { placeholder: '123-456-7890' })}
+              {field('Cuenta publicitaria de Meta', 'metaCuenta', { placeholder: 'act_1234567890' })}
+              {field('Tope de gasto mensual', 'topeAds', { placeholder: 'Ej. 1500', hint: 'Avisa al llegar al 90 %.' })}
+            </div>
+            <div className="form-row">
+              {field('Credencial propia de Google Ads (opcional)', 'credGads', { area: true, rows: 2, placeholder: '{"developer_token": …}', hint: 'No se vuelve a mostrar.' })}
+              {field('Token propio de Meta Ads (opcional)', 'tokenMeta', { area: true, rows: 2, hint: 'No se vuelve a mostrar.' })}
+            </div>
           </>}
 
           {tab === 'alcance' && <>

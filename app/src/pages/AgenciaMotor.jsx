@@ -28,6 +28,8 @@ export const SECRETOS_MOTOR = [
   { id: 'WHATSAPP_TOKEN', nombre: 'Token de WhatsApp (Meta)', ayuda: 'Token permanente de un usuario del sistema (Meta Business → Usuarios del sistema) con permiso whatsapp_business_messaging.' },
   { id: 'WHATSAPP_APP_SECRET', nombre: 'App secret de Meta', ayuda: 'Meta for Developers → tu app → Configuración → Básica. El motor lo usa para comprobar que cada mensaje viene de Meta.' },
   { id: 'CLOUDFLARE_TUNNEL_TOKEN', nombre: 'Token del túnel de Cloudflare (opcional)', ayuda: 'Para una URL fija: Cloudflare → Zero Trust → Networks → Tunnels → crear túnel → token. Apunta el hostname a http://localhost:<puerto>.' },
+  { id: 'GOOGLE_ADS_CRED', nombre: 'Google Ads de la agencia (MCC)', ayuda: 'JSON {"developer_token","client_id","client_secret","refresh_token","login_customer_id"} de tu cuenta de administrador. Solo lectura: los agentes no cambian campañas.' },
+  { id: 'META_ADS_TOKEN', nombre: 'Token de Meta Ads de la agencia', ayuda: 'Token de un usuario del sistema del Business Manager con permiso ads_read sobre las cuentas de tus clientes.' },
   { id: 'GOOGLE_ANALITICA_SA', nombre: 'Cuenta de servicio de Google (analítica de la agencia)', ayuda: 'JSON de una cuenta de servicio (Google Cloud → IAM → Cuentas de servicio → Claves). Cada cliente le da acceso de Lector en GA4 y en Search Console. Un cliente también puede tener la suya en su ficha.' },
 ]
 const PLANES = [
