@@ -135,6 +135,13 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `logs/seguridad.lock`, registro `logs/seguridad-registro.jsonl`). El worker lo declara con `--mcp-config` y pasa
   `AGENTES_ALCANCE` = `clients.alcanceAutorizado` del cliente de la tarea. `run_scan` está en `accionesConAprobacion`.
   Rol `auditor_seguridad`, grupo `seguridad` (solo Claude), tipo `analisis_repo`. Ficha → Alcance ampliada.
+- Analítica (B7): `motor/analitica.mjs` (puro con pruebas: cuenta de servicio, JWT RS256 con `node:crypto`, fechas y
+  periodo anterior, cuerpos y filas de GA4 Data API y Search Console, comparación, oportunidades) y
+  `motor/analitica-server.mjs` (MCP `agentes-analitica`: estado_analitica, ga4_resumen, ga4_reporte, gsc_rendimiento,
+  gsc_oportunidades; sin dependencias de Google). El worker pasa `AGENTES_GOOGLE_SA` (`secretos/cliente_<id>_google` o
+  `GOOGLE_ANALITICA_SA`), `AGENTES_GA4_PROPIEDAD` y `AGENTES_GSC_SITIO` desde `clients.analitica` del cliente de la
+  tarea. Latido: `analitica { cuentaAgencia, clientes }` (solo correos). Rol `analista`, grupo `analitica`, tipo
+  `informe_analitica` (rutina mensual día 3). URLs de Google cambiables por env solo para pruebas.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
