@@ -44,10 +44,15 @@ const desde = (c = {}, e = {}) => ({
   tareas5h: String(c.limitesClaude?.tareas5h ?? ''),
   tareasSemana: String(c.limitesClaude?.tareasSemana ?? ''),
   programadasPrimeroOtros: (c.programadasPrimeroOtros ?? e.programadasPrimeroOtros) !== false,
+  aprActivo: (c.aprendizaje?.activo ?? e.aprendizaje?.activo) !== false,
+  aprMinTurnos: String(c.aprendizaje?.minTurnos ?? e.aprendizaje?.minTurnos ?? 12),
+  aprConClaude: !!(c.aprendizaje?.conClaude ?? e.aprendizaje?.conClaude),
+  aprProveedorId: c.aprendizaje?.proveedorId ?? e.aprendizaje?.proveedorId ?? '',
+  aprModelo: c.aprendizaje?.modelo ?? e.aprendizaje?.modelo ?? '',
 })
 
 export default function AgenciaMotor() {
-  const { showToast } = useApp()
+  const { showToast, providers } = useApp()
   const [worker, setWorker] = useState(undefined)
   const [panel, setPanel] = useState(undefined)
   const [form, setForm] = useState(null)
@@ -98,9 +103,12 @@ export default function AgenciaMotor() {
       if (!Number.isInteger(n) || n < 1) { showToast('Los umbrales de Claude son números enteros mayores que 0 (o vacío para el valor del plan)', 'error'); return }
       limitesClaude[k] = n
     }
+    const minTurnos = Number(form.aprMinTurnos)
+    if (!Number.isInteger(minTurnos) || minTurnos < 1) { showToast('Pasos mínimos para aprender: un número entero mayor que 0', 'error'); return }
     setGuardando(true)
     try {
       await setDoc(doc(db, 'config', 'motor'), {
+        aprendizaje: { activo: form.aprActivo, minTurnos, conClaude: form.aprConClaude, proveedorId: form.aprProveedorId, modelo: form.aprModelo.trim() },
         paralelo, respaldo: form.respaldo, esperaDepartamentoMin: espera,
         zonaHoraria: form.zonaHoraria.trim(), modeloAntigravity: form.modeloAntigravity.trim(), geminiDePago: form.geminiDePago,
         telegramOwnerId: form.telegramOwnerId.trim(), fuentesSkills: fromLines(form.fuentesSkills),
@@ -179,6 +187,39 @@ export default function AgenciaMotor() {
           Tus preferencias como quien aprueba: estilo, cosas que siempre pides o que nunca quieres ver. Va en cada tarea de todos los agentes.
         </p>
         <MemoriaEditor tipo="dueno" entradas={perfil} onChange={guardarPerfil} vacio="Aún no hay nada. Ejemplo: «Prefiero textos cortos, sin signos de exclamación.»" />
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0, fontSize: 15 }}>Aprendizaje propuesto</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0 }}>
+          Al aprobar una tarea con correcciones, rechazo, observaciones del revisor o muchos pasos, un modelo sin herramientas
+          propone qué guardar en la memoria o qué convertir en skill. Tú lo apruebas en el Pipeline.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+            <input type="checkbox" checked={form.aprActivo} onChange={e => set('aprActivo', e.target.checked)} />
+            Proponer aprendizajes al aprobar tareas
+          </label>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Modelo por API (opcional)</label>
+              <select className="form-select" value={form.aprProveedorId} onChange={e => set('aprProveedorId', e.target.value)}>
+                <option value="">Ninguno: usar Antigravity, Codex o Gemini</option>
+                {providers.filter(p => p.activo !== false).map(p => <option key={p.id} value={p.id}>{p.nombre}{p.gratis ? ' (gratis)' : ''}</option>)}
+              </select>
+              {form.aprProveedorId && <input className="form-input" style={{ marginTop: 6 }} value={form.aprModelo} onChange={e => set('aprModelo', e.target.value)} placeholder="Modelo (vacío = el primero del proveedor)" />}
+              <span style={nota}>Un modelo barato basta. Los proveedores gratis solo se usan con clientes que lo permiten.</span>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Revisar también tareas sin correcciones con al menos N pasos</label>
+              <input className="form-input" type="number" min={1} value={form.aprMinTurnos} onChange={e => set('aprMinTurnos', e.target.value)} />
+            </div>
+          </div>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+            <input type="checkbox" checked={form.aprConClaude} onChange={e => set('aprConClaude', e.target.checked)} />
+            Si no hay otro motor, usar Claude (gasta de tu plan)
+          </label>
+        </div>
       </div>
 
       <div className="card">

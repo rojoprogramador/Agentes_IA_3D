@@ -90,6 +90,17 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `AGENTES_CLIENTE` (y `AGENTES_TAREA` para excluirla) que `runClaude` y el plugin de Antigravity ponen al lanzar;
   sin esa variable la herramienta se niega. Tareas sin cliente = `__interno__`. Las claves se redactan
   (`CREDENCIAL` de `memoria.mjs`) y la consulta se reduce a palabras entre comillas (`consultaSegura`).
+- Aprendizaje propuesto (`motor/aprendizaje.mjs`, puro con pruebas): al aprobar (`driveSync: 'pendiente'`)
+  `encolarAprendizaje` → `revisarAprendizaje` si `motivoRevision` (rechazo, corrección, notas del revisor o
+  `costo.turnos ≥ minTurnos`); una vez por tarea (`logs/aprendizaje-revisadas.json`), en cola. `correrRevisorAprendizaje`
+  usa `config/motor.aprendizaje.proveedorId` (API) y luego los CLI sin Claude (salvo `conClaude`), con
+  `opts.sinHerramientas`. `parsearPropuestas` valida con `revisarEntrada`; se crean `propuestas/{id}`
+  `{ tipo: memoria|skill, destino, texto|skill+markdown, estado }`. Panel: `PropuestasAprendizaje.jsx` (arriba del
+  Pipeline): memoria → `agregarEntrada` en la ficha; skill → `estado: 'aprobada'` y el motor escribe el SKILL.md
+  (`instalarSkillPropuesta`, `rutaSkill`): global en `motor/.claude/skills/` (origen `local` en skills-origen.json),
+  de cliente en `motor/skills-clientes/<clienteId>/`, copiada a `trabajos/<id>/.claude/skills/` solo en sus tareas
+  (`copiarSkillsDeCliente`; verificado que Claude Code las carga). Reglas: el robot crea en `pendiente` y solo pasa
+  una skill aprobada a `instalada`/`error`; el admin no puede cambiar `tipo` ni `destino`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

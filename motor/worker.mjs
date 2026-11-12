@@ -20,6 +20,7 @@ import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
+import { AJUSTES_APRENDIZAJE, motivoRevision, promptAprendizaje, parsearPropuestas, skillMarkdown, rutaSkill } from './aprendizaje.mjs'
 import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
 import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro } from './agencia.mjs'
@@ -66,7 +67,7 @@ const negocio = loadNegocio()
 
 // Ajustes del motor editables desde el panel (config/motor). Lo que el panel no define sale de negocio.json.
 const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId',
-  'planClaude', 'limitesClaude', 'programadasPrimeroOtros']
+  'planClaude', 'limitesClaude', 'programadasPrimeroOtros', 'aprendizaje']
 let configPanel = {}
 let perfilDueno = {}   // config/perfilDueno: { entradas } (memoria del dueño, se edita en el panel)
 function ajustes() {
@@ -755,6 +756,8 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
     ...ejemplos.map(e => `### ${e.titulo || 'Ejemplo'}\n${String(e.texto).slice(0, 3000)}`))
   const memoria = bloqueMemoria(`TU MEMORIA (${agent.name})`, agent.aprendizajes, LIMITES_MEMORIA.agente, 'Lecciones de correcciones anteriores, para todos tus clientes (aplícalas siempre):')
   if (memoria) lines.push('\n' + memoria)
+  const delCliente = client ? skillsDeCliente(client.id) : []
+  if (delCliente.length && !usaApi(agent, t)) lines.push(`\n## Skills de ${client.nombre}\nProcedimientos aprendidos con este cliente: ${delCliente.join(', ')}. Úsalos con la herramienta Skill si la tienes; si no, léelos en .claude/skills/<nombre>/SKILL.md.`)
   if (lista(agent.skills).length && !usaApi(agent, t)) lines.push(`\n## Skills\nCuando apliquen, usa estas skills con la herramienta Skill: ${agent.skills.join(', ')}.`)
   // Sistemas de diseño por cliente (negocio.json → agentes[id].sistemasPorCliente)
   const sistemas = perfil?.sistemasPorCliente
@@ -783,6 +786,118 @@ const SALIDA_RULES = `
   - Todo el CSS dentro del archivo. Sin JavaScript (no se ejecuta). Fuentes de Google Fonts por https sí funcionan.
   - Imágenes por https (p. ej. el logo de la web del cliente) o archivos dentro de salida/.
 - Tu respuesta final resume el entregable y lista los archivos que creaste.`
+
+// ---------- Aprendizaje propuesto (B2, motor/aprendizaje.mjs) ----------
+// Al aprobar una tarea con fricción (correcciones, rechazo, observaciones o muchos pasos), un modelo SIN
+// herramientas propone memoria o una skill. Va a propuestas/{id}; un admin aprueba o descarta en el tablero.
+// Por defecto no usa Claude (plan Pro): API configurada → Antigravity → Codex → Gemini.
+const ajustesAprendizaje = () => ({ ...AJUSTES_APRENDIZAJE, ...(ajustes().aprendizaje || {}) })
+const SKILLS_CLIENTES = join(ROOT, 'skills-clientes')
+const ID_OK = /^[A-Za-z0-9_-]{1,64}$/
+function skillsDeCliente(clienteId) {
+  if (!ID_OK.test(String(clienteId || ''))) return []
+  try { return readdirSync(join(SKILLS_CLIENTES, clienteId)).filter(n => existsSync(join(SKILLS_CLIENTES, clienteId, n, 'SKILL.md'))) } catch { return [] }
+}
+// Solo en tareas de ese cliente: así un agente nunca ve procedimientos aprendidos con otro cliente
+function copiarSkillsDeCliente(t, cwd) {
+  const c = clientFor(t)
+  const nombres = c ? skillsDeCliente(c.id) : []
+  for (const n of nombres) cpSync(join(SKILLS_CLIENTES, c.id, n), join(cwd, '.claude', 'skills', n), { recursive: true })
+  if (nombres.length) log(`  Skills de ${c.nombre}: ${nombres.join(', ')}`)
+}
+
+const REVISADAS = join(ROOT, 'logs', 'aprendizaje-revisadas.json')
+const revisadas = new Set((() => { try { return JSON.parse(readFileSync(REVISADAS, 'utf8')) } catch { return [] } })())
+let colaAprendizaje = Promise.resolve()
+function encolarAprendizaje(t) {
+  if (revisadas.has(t.id)) return
+  revisadas.add(t.id)
+  writeFileSync(REVISADAS, JSON.stringify([...revisadas].slice(-2000)))
+  colaAprendizaje = colaAprendizaje.then(() => revisarAprendizaje(t)).catch(e => log('Aprendizaje: error', e.message))
+}
+
+// Corre la revisión con un motor que no sea Claude (salvo que el panel lo permita) y sin herramientas
+async function correrRevisorAprendizaje(prompt, cwd, t) {
+  const a = ajustesAprendizaje()
+  const tMin = { id: t.id, tarea: t.tarea, clienteId: t.clienteId, cliente: t.cliente } // sin permisos extra de la tarea
+  const falso = { id: '_aprendizaje', name: 'Revisor de aprendizaje', rol: 'personalizado' }
+  if (a.proveedorId && providersById.has(a.proveedorId)) {
+    const prov = providersById.get(a.proveedorId)
+    if (!(prov.gratis && !permiteGratis(tMin))) {
+      const cfg = await apiConfigFor({ modelo: { proveedor: 'api', proveedorId: a.proveedorId, nombre: a.modelo || '' } })
+      const r = await runApi(cfg, prompt)
+      if (r.code === 0 && r.json?.result) return { ...r, motor: 'api' }
+    }
+  }
+  const orden = [...new Set([...lista(ajustes().respaldo), ...MOTORES_CLI])].filter(m => m !== 'claude' || a.conClaude)
+  for (const m of orden) {
+    if (m !== 'claude' && !motorDisponible(m, falso, tMin)) continue
+    const r = m === 'claude'
+      ? await runClaude(prompt, cwd, { tools: [], maxTurns: 2 })
+      : await correrMotor(m, falso, prompt, cwd, { sinHerramientas: true }, tMin)
+    if (r.code === 0 && r.json?.result) return { ...r, motor: m }
+  }
+  return null
+}
+
+async function revisarAprendizaje(t) {
+  const a = ajustesAprendizaje()
+  if (a.activo === false) return
+  const motivo = motivoRevision(t, { minTurnos: a.minTurnos })
+  if (!motivo) return
+  const agent = agents.get(t.asignado)
+  if (!agent) return // tareas de personas: no hay agente que aprenda
+  const client = clientFor(t)
+  const prompt = promptAprendizaje({
+    t, motivo, cliente: client?.nombre || '', agente: agent.name,
+    memoriaCliente: client?.aprendizajes, memoriaAgente: agent.aprendizajes,
+    skills: [...installedSkills().map(s => s.nombre), ...(client ? skillsDeCliente(client.id) : [])],
+  })
+  const cwd = join(ROOT, 'trabajos', `${t.id}-aprendizaje`)
+  mkdirSync(cwd, { recursive: true })
+  writeFileSync(join(cwd, 'tarea.md'), prompt)
+  log(`🧠 Revisando qué aprender de "${t.tarea}" (${motivo})`)
+  const r = await correrRevisorAprendizaje(prompt, cwd, t)
+  if (!r) { log('  Aprendizaje: ningún motor disponible sin Claude (actívalo en Agencia → Motor si quieres usarlo)'); return }
+  const p = parsearPropuestas(r.json.result, { hayCliente: !!client })
+  if (p.descartadas.length) log(`  Aprendizaje: descartado → ${p.descartadas.join(' · ')}`)
+  const base = { origenTaskId: t.id, tarea: t.tarea || '', motivo, motor: r.motor, estado: 'pendiente', creadaAt: serverTimestamp() }
+  const nuevas = [
+    ...p.memoriaCliente.map(texto => ({ ...base, tipo: 'memoria', texto, destino: { col: 'clients', id: client.id, nombre: client.nombre } })),
+    ...p.memoriaAgente.map(texto => ({ ...base, tipo: 'memoria', texto, destino: { col: 'agents', id: agent.id, nombre: agent.name } })),
+    ...(p.skill ? [{ ...base, tipo: 'skill', skill: p.skill, markdown: skillMarkdown(p.skill),
+      destino: p.skill.alcance === 'cliente' ? { alcance: 'cliente', id: client.id, nombre: client.nombre } : { alcance: 'global', id: '', nombre: 'todos los agentes' } }] : []),
+  ]
+  for (const n of nuevas) {
+    try { await addDoc(collection(db, 'propuestas'), n) }
+    catch (e) { log('  Aprendizaje: no pude guardar la propuesta (¿reglas publicadas?):', e.code || e.message); return }
+  }
+  log(`  ${nuevas.length ? `${nuevas.length} aprendizaje(s) propuesto(s)` : 'Nada nuevo que aprender'} (${r.motor})`)
+  if (nuevas.length) telegram?.notify(`Aprendí algo de "${t.tarea}": ${nuevas.length} propuesta(s) para revisar en el tablero.`)
+}
+
+// Skill aprobada por un admin → el motor escribe el SKILL.md (el panel no puede escribir en el PC)
+const instalando = new Set()
+async function instalarSkillPropuesta(pr) {
+  if (instalando.has(pr.id)) return
+  instalando.add(pr.id)
+  const ref = doc(db, 'propuestas', pr.id)
+  try {
+    const md = String(pr.markdown || '')
+    const nombre = md.match(/^name:\s*([a-z0-9-]{3,48})\s*$/m)?.[1]
+    if (!md.startsWith('---') || !nombre || md.length > 20000) throw new Error('El SKILL.md debe empezar con --- y tener "name:" en kebab-case')
+    const destino = rutaSkill(ROOT, { alcance: pr.destino?.alcance, clienteId: pr.destino?.id, nombre })
+    mkdirSync(destino, { recursive: true })
+    writeFileSync(join(destino, 'SKILL.md'), md)
+    if (pr.destino?.alcance !== 'cliente') skillsMgr.registrarLocal(nombre, { propuestaId: pr.id, tareaId: pr.origenTaskId })
+    await updateDoc(ref, { estado: 'instalada', ruta: relative(ROOT, destino), instaladaAt: serverTimestamp() })
+    log(`🧩 Skill aprendida instalada: ${relative(ROOT, destino)}`)
+    heartbeat()
+  } catch (e) {
+    log('✖ No pude instalar la skill aprendida:', e.message)
+    await updateDoc(ref, { estado: 'error', error: String(e.message).slice(0, 300) }).catch(() => {})
+  } finally { instalando.delete(pr.id) }
+}
 
 // ---------- Claude Code ----------
 function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '' } = {}) {
@@ -934,17 +1049,17 @@ async function correrMotor(m, agent, prompt, cwd, opts, t) {
   }
   // Codex y Gemini: reglas de los agentes + reglas de archivos en la misma instrucción
   const completo = [reglasAgentes(), prompt, prompt.includes('## Archivos entregables') ? '' : SALIDA_RULES].filter(Boolean).join('\n\n')
-  const web = toolsFor(agent, t).includes('WebSearch')
+  const web = !opts?.sinHerramientas && toolsFor(agent, t).includes('WebSearch')
   if (m === 'antigravity') {
     // Modelo elegido en el agente si es de Antigravity; si no, el que tenga por defecto
     const modelo = agent?.modelo?.proveedor === 'antigravity' ? agent.modelo.nombre : (ajustes().modeloAntigravity || '')
     // Herramientas de medios del motor que tendría con Claude (entregas, edición de video) → plugin MCP de la tarea
-    const herramientas = toolsFor(agent, t).filter(x => x.startsWith('mcp__agentes-media__')).map(x => x.slice('mcp__agentes-media__'.length))
+    const herramientas = opts?.sinHerramientas ? [] : toolsFor(agent, t).filter(x => x.startsWith('mcp__agentes-media__')).map(x => x.slice('mcp__agentes-media__'.length))
     const mcp = herramientas.length ? {
       command: process.execPath, args: [join(ROOT, 'media-server.mjs')], herramientas,
       env: { AGENTES_AGENTE: opts?.agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: opts?.clienteId || '', AGENTES_TAREA: opts?.tareaId || '' },
     } : null
-    const conImagenes = gruposExclusivos(agent, t).includes('magnific_imagenes')
+    const conImagenes = !opts?.sinHerramientas && gruposExclusivos(agent, t).includes('magnific_imagenes')
     const notas = [
       mcp ? `## Herramientas de medios\nTienes el servidor MCP "agentes-media" con: ${herramientas.join(', ')}. Úsalas igual que en las instrucciones de tu rol.` : '',
       conImagenes ? '## Imágenes en este motor\nMagnific no está disponible aquí: crea las imágenes con tu generador de imágenes (subagente image-generator). El motor copia a tu entrega las imágenes que generes en esta tarea; menciona en tu respuesta cuáles son y el prompt de cada una.' : '',
@@ -1273,6 +1388,7 @@ async function runTask(t) {
   const cwd = join(ROOT, 'trabajos', t.id)
   mkdirSync(cwd, { recursive: true })
   const adjuntos = prepareAttachments(t, cwd)
+  copiarSkillsDeCliente(t, cwd)
   const prompt = buildPrompt(agent, t, { adjuntos })
   writeFileSync(join(cwd, 'tarea.md'), prompt)
 
@@ -1667,8 +1783,17 @@ async function main() {
 
   // Entregas aprobadas: copiar la última versión a <Cliente>/Aprobados
   onSnapshot(query(collection(db, 'tasks'), where('driveSync', '==', 'pendiente')), snap => {
-    snap.forEach(d => syncApproved({ id: d.id, ...d.data() }))
+    snap.forEach(d => { const t = { id: d.id, ...d.data() }; syncApproved(t); encolarAprendizaje(t) })
   }, e => log('Error leyendo aprobadas:', e.code || e.message))
+
+  // Skills aprendidas que un admin aprobó: el motor las escribe en disco
+  const escucharPropuestas = () => onSnapshot(query(collection(db, 'propuestas'), where('estado', '==', 'aprobada'), where('tipo', '==', 'skill')), snap => {
+    snap.forEach(d => instalarSkillPropuesta({ id: d.id, ...d.data() }))
+  }, e => {
+    log('Propuestas de aprendizaje sin acceso (publica las reglas de Firestore); reintento en 1 min:', e.code || e.message)
+    setTimeout(escucharPropuestas, 60_000)
+  })
+  escucharPropuestas()
 
   // Ajustes y claves desde el panel: se aplican al cambiar, sin reiniciar el motor
   await escucharPanel()

@@ -5,6 +5,7 @@ import { doc, updateDoc, deleteDoc, addDoc, collection, serverTimestamp } from '
 import { logWork } from '../utils/worklog.js'
 import Icon from '../components/Icons.jsx'
 import { esDeDepartamento } from '../agencia.js'
+import PropuestasAprendizaje from '../components/PropuestasAprendizaje.jsx'
 
 const COLUMNS = [
   { id: 'pendiente',   label: 'Pendiente',    icon: 'hourglass', color: 'var(--text-3)' },
@@ -415,6 +416,8 @@ export default function KanbanView() {
           </div>
         </div>
       </div>
+
+      <PropuestasAprendizaje />
 
       <div className="kanban-board">
         {COLUMNS.map(col => {
