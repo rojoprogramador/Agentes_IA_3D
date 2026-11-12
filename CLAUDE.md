@@ -149,6 +149,15 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   respuesta final con `tool_choice: none`), `crearLlamada` y `responder` (si el proveedor rechaza `tools`, repite sin
   ellas). `runApi(cfg, prompt, { cwd, grupos })` en el worker; `needsTools` ya no manda a Claude las tareas cuyos grupos
   están en `GRUPOS_API` (y `formatoEntrega: archivos` solo si la tarea no tiene `salida`).
+- WhatsApp (B9): `motor/whatsapp.mjs` (con pruebas: `verificarFirma` HMAC-SHA256 con app secret, verificación GET,
+  `extraerMensajes`, `partirTexto`, ventana de 24 h, código de emparejamiento, cliente Graph `enviarTexto/marcarLeido/
+  descargarMedio`, `crearServidorWebhook`) y `motor/tunel.mjs` (`cloudflared` quick tunnel o con
+  `CLOUDFLARE_TUNNEL_TOKEN`; reintento con espera creciente). Worker: `reiniciarWhatsApp` (firma de config; puerto
+  `config/motor.whatsapp.puerto`, 8790), `atenderWhatsApp`: desconocido/pendiente → código (1 respuesta/h) en
+  `whatsappContactos/{numero}`; `rol: dueno` → `handleTelegram(texto, 'WhatsApp')`; `rol: cliente` →
+  `whatsappMensajes` (entrante) + historial (`rol: 'whatsapp'`) + aviso por Telegram; nunca responde un agente.
+  Respuestas del panel: `whatsappMensajes` saliente `pendiente_envio` → `enviarDesdePanel`. Panel: Agencia → WhatsApp
+  (`AgenciaWhatsApp.jsx`) y tarjeta en Motor. Secretos `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`, `CLOUDFLARE_TUNNEL_TOKEN`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
