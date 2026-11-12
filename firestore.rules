@@ -106,7 +106,7 @@ service cloud.firestore {
     match /skillOps/{opId} {
       allow read: if isAdmin() || isAgentBot();
       allow create: if isAdmin() && request.resource.data.estado == 'pendiente'
-        && request.resource.data.tipo in ['buscar', 'revisar', 'instalar', 'actualizar', 'desinstalar']
+        && request.resource.data.tipo in ['buscar', 'revisar', 'instalar', 'actualizar', 'desinstalar', 'curar', 'restaurar']
         && !('resultado' in request.resource.data);
       allow update: if isAgentBot();
       allow delete: if isAdmin();
