@@ -89,3 +89,45 @@ Tarea "Secuencia de correos" → agente email_marketing
 
 **Verificado.** 4 pruebas nuevas; punta a punta contra un Listmonk falso: solo ve sus listas, filtra campañas ajenas,
 rechaza listas de otro cliente, crea el borrador y nunca llama a un endpoint de envío.
+
+---
+
+## C3 · DevOps y soporte (alertas de caída)
+
+**Qué es.** Cuando **Uptime Kuma** (monitor de sitios gratis) detecta que un sitio de un cliente cayó, avisa al motor;
+el motor te avisa por Telegram y crea **una** tarea urgente al agente `devops`, que diagnostica **desde afuera** y
+propone cómo arreglarlo. Cuando el sitio vuelve, te avisa cuánto estuvo caído.
+
+**Recorrido.**
+```
+Uptime Kuma ──POST JSON──► 127.0.0.1:8790/alertas/kuma/<token>  (o por el túnel si Kuma está en otro lado)
+   token en tiempo constante → leerAlertaKuma → decidir():
+     caído + sin incidente abierto → Telegram 🔴 + tarea "🔴 Caída: <monitor>" al agente DevOps (prioridad alta)
+     caído + incidente abierto     → solo cuenta (no llena el tablero de tareas repetidas)
+     arriba + incidente abierto    → Telegram 🟢 "volvió tras N min" + marca la tarea
+Agente devops → diagnostico_sitio (DNS · HTTP ×3 con tiempos · certificado TLS) → diagnóstico + plan → tu revisión
+```
+
+**Dónde mirar.** `motor/alertas.mjs` (puro), `recibirAlerta`/`atenderAlerta` en `motor/worker.mjs`,
+`diagnostico_sitio` en `motor/auditoria-server.mjs`, rol `devops`, Agencia → Motor → *Alertas de caída*.
+
+**Por qué así.**
+- **Un solo servidor de entrada**: WhatsApp y alertas comparten puerto y túnel; menos cosas expuestas.
+- **Token en la URL**: Uptime Kuma no firma sus webhooks como Meta, así que el secreto va en la ruta y se compara en
+  tiempo constante. Un token equivocado responde 401.
+- **Una tarea por incidente**: un sitio caído manda una alerta por cada chequeo; sin esto, el tablero se llenaría.
+- **Diagnóstico desde afuera, sin acceso a servidores**: el agente no tiene terminal ni credenciales de hosting. Mide
+  lo que ve cualquier visitante y propone; el arreglo lo hace quien tiene acceso.
+- **Clasificación de la causa**: dominio que no resuelve, certificado vencido, 5xx, 4xx o tiempo agotado; cada una
+  apunta a un responsable distinto (DNS/registrador, hosting, desarrollador).
+
+**Conceptos.**
+- **Monitor de disponibilidad (uptime)**: un programa que visita el sitio cada minuto y avisa si falla.
+- **Webhook**: el monitor llama a tu URL en vez de que tú le preguntes.
+- **Códigos HTTP**: 2xx bien; 3xx redirección; 4xx error de la petición o configuración; 5xx falla del servidor.
+- **Certificado TLS**: lo que hace que el sitio abra con candado (https). Si vence, los navegadores bloquean el sitio.
+
+**Verificado.** 5 pruebas nuevas (lectura del webhook, token, asociación a cliente, una tarea por incidente,
+enrutamiento del servidor compartido). `diagnostico_sitio` contra sitios reales: tu sitio (bien, certificado de
+Let's Encrypt con 39 días), `expired.badssl.com` (detecta el certificado vencido) y un dominio inexistente.
+**Falta**: conectar un Uptime Kuma real y publicar las reglas.
