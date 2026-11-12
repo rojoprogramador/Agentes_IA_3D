@@ -158,6 +158,7 @@ export const emptyClient = (nombre = '') => ({
   analitica: { ga4PropertyId: '', gscSitio: '' },
   ads: { googleAdsCustomerId: '', metaAdAccountId: '', topeMensual: 0 },
   email: { listas: [] },
+  geo: { activo: false, marca: '', alias: [], dominio: '', competidores: [], prompts: [], proveedores: [] },
   alcanceAutorizado: { dominios: [], repos: [], ips: [], subdominios: false, notas: '', autorizadoPor: '', cargo: '', fecha: '', documento: '', vigenciaDesde: '', vigenciaHasta: '', ventana: { dias: [], desde: '', hasta: '' } },
   departamentos: [],
   aprendizajes: [],

@@ -164,6 +164,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // GEO (C4): el motor guarda cada respuesta medida; un admin las lee y puede borrarlas.
+    match /geoResultados/{clienteId}/items/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if isAgentBot() && request.resource.data.clienteId == clienteId;
+    }
+    // Pedido de medición manual desde la ficha del cliente
+    match /geoPedidos/{id} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if isAdmin() && request.resource.data.estado == 'pendiente' && request.resource.data.clienteId is string;
+      allow update: if isAgentBot() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'resumen', 'error'])
+        && request.resource.data.estado in ['midiendo', 'listo', 'error'];
+      allow delete: if isAdmin();
+    }
+
     // Config (lista de clientes): leer todos, escribir solo admin
     match /config/{docId} {
       allow read: if isAuth();
