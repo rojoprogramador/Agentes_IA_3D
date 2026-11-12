@@ -10,7 +10,7 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth'
 import {
-  getFirestore, collection, doc, query, where, onSnapshot, getDoc, updateDoc, setDoc, addDoc,
+  getFirestore, collection, doc, query, where, onSnapshot, getDoc, getDocs, updateDoc, setDoc, addDoc,
   serverTimestamp, increment, Timestamp,
 } from 'firebase/firestore'
 import { startTelegram } from './telegram.mjs'
@@ -19,6 +19,7 @@ import { crearEntregables } from './entregables.mjs'
 import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
+import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
 import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
 import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro } from './agencia.mjs'
@@ -322,6 +323,8 @@ function toolsFor(agent, t = null) {
   for (const t of p.herramientasExtra || []) list.add(t)
   if (lista(agent?.skills).length) list.add('Skill')
   if (folderFor(agent)) for (const t of groups.drive_crear || []) list.add(t)
+  // Historial del cliente: solo lectura y siempre filtrado por el motor, así que va en toda tarea (no en el chat)
+  if (t) for (const x of groups.historial || []) list.add(x)
   return [...list]
 }
 
@@ -418,6 +421,7 @@ async function answerTask(taskId, answer, via) {
     agentStatus: 'queued',
   })
   log(`↩ Respuesta de ${OWNER} (${via}) enviada a "${t.tarea}"`)
+  anotar({ id: taskId, ...t }, 'respuesta', answer, '')
   return { tarea: t.tarea, agent: agents.get(t.asignado)?.name || 'el agente' }
 }
 
@@ -644,6 +648,34 @@ function clientFor(t) {
 }
 
 const briefSection = (t) => briefPuro(t, taskTypesById.get(t.tipoTareaId))
+
+// ---------- Historial buscable (B1, motor/historial.mjs) ----------
+// Cada cosa que pasa en una tarea queda en logs/historial.db bajo el cliente de la tarea. Si la base falla,
+// el motor sigue trabajando: el historial es una ayuda, no un requisito.
+let historial = null
+function historialDb() {
+  if (historial === null) {
+    try { historial = abrirHistorial(join(ROOT, 'logs', 'historial.db')) }
+    catch (e) { historial = false; log('Historial desactivado:', e.message) }
+  }
+  return historial || null
+}
+const clienteHistorial = (t) => t?.clienteId || clientFor(t)?.id || INTERNO
+function anotar(t, rol, texto, agenteId = t?.asignado || '') {
+  try { historialDb()?.registrar({ clienteId: clienteHistorial(t), tareaId: t.id, tarea: t.tarea || '', agenteId, rol, texto }) }
+  catch (e) { log('Historial: no pude anotar:', e.message) }
+}
+// Una vez al arrancar: todas las tareas que existen (abiertas y cerradas). Idempotente.
+async function llenarHistorial() {
+  const h = historialDb()
+  if (!h) return
+  try {
+    const antes = h.total()
+    const snap = await getDocs(collection(db, 'tasks'))
+    snap.forEach(d => { const t = { id: d.id, ...d.data() }; for (const m of mensajesDeTarea(t, clienteHistorial(t))) h.registrar(m) })
+    log(`🗂 Historial: ${h.total()} mensajes (${h.total() - antes} nuevos)`)
+  } catch (e) { log('Historial: no pude leer las tareas:', e.code || e.message) }
+}
 const inside = (root, p) => { const r = relative(root, p); return r && !r.startsWith('..') && !isAbsolute(r) }
 
 // Carpeta de la agencia (sincronizada con Google Drive): media-config.json → agenciaDrive.
@@ -731,6 +763,9 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
       ...Object.entries(sistemas).map(([c, s]) => `- ${c}: ${s}`),
       '- Cliente sin sistema asignado: elige la skill de diseño que mejor encaje entre las instaladas y explica la elección en las notas finales.')
   }
+  if (!usaApi(agent, t) && toolsFor(agent, t).includes('mcp__agentes-media__buscar_historial')) {
+    lines.push(`\n## Historial${client ? ' de ' + client.nombre : ''}\nSi tienes la herramienta buscar_historial, puedes buscar en las tareas anteriores${client ? ' de este cliente' : ' internas'} (entregas, correcciones y respuestas de ${OWNER}). Úsala antes de proponer algo que quizá ya se hizo o se corrigió.`)
+  }
   if (!usaApi(agent, t) && toolsFor(agent, t).some(x => x.startsWith('Write('))) lines.push(SALIDA_RULES)
   const drive = driveRules(agent, t)
   if (drive) lines.push(drive)
@@ -750,7 +785,7 @@ const SALIDA_RULES = `
 - Tu respuesta final resume el entregable y lista los archivos que creaste.`
 
 // ---------- Claude Code ----------
-function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40 } = {}) {
+function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '' } = {}) {
   return new Promise((resolve) => {
     const args = [
       '-p', '--output-format', 'json', '--max-turns', String(maxTurns),
@@ -763,7 +798,8 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     // AGENTES_AGENTE: el servidor de medios guarda en la carpeta de este agente
     // Con suscripción (Pro/Max) se quita ANTHROPIC_API_KEY: si estuviera, Claude Code cobraría por API sin avisar.
     // Con plan "api" se usa la clave del panel (o la del entorno).
-    const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '' }
+    // AGENTES_CLIENTE / AGENTES_TAREA: buscar_historial solo ve el historial de este cliente (vacío = sin historial)
+    const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: clienteId, AGENTES_TAREA: tareaId }
     if (planValido(ajustes().planClaude) === 'api') { if (secreto('ANTHROPIC_API_KEY')) envClaude.ANTHROPIC_API_KEY = secreto('ANTHROPIC_API_KEY') }
     else delete envClaude.ANTHROPIC_API_KEY
     const child = lanzar(bin, args, { cwd, shell: true, windowsHide: true, env: envClaude })
@@ -906,7 +942,7 @@ async function correrMotor(m, agent, prompt, cwd, opts, t) {
     const herramientas = toolsFor(agent, t).filter(x => x.startsWith('mcp__agentes-media__')).map(x => x.slice('mcp__agentes-media__'.length))
     const mcp = herramientas.length ? {
       command: process.execPath, args: [join(ROOT, 'media-server.mjs')], herramientas,
-      env: { AGENTES_AGENTE: opts?.agentName || '', AGENTES_COLOR: negocio.color || '' },
+      env: { AGENTES_AGENTE: opts?.agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: opts?.clienteId || '', AGENTES_TAREA: opts?.tareaId || '' },
     } : null
     const conImagenes = gruposExclusivos(agent, t).includes('magnific_imagenes')
     const notas = [
@@ -1017,7 +1053,7 @@ async function reviewDelivery(reviewer, t, entrega, cwd) {
     'Usa "ok" si cumple los criterios. Usa "observaciones" solo si hay problemas reales.',
   ].filter(Boolean).join('\n')
   writeFileSync(join(cwd, 'revision.md'), prompt)
-  const res = await runModel(reviewer, prompt, cwd, { tools: ['Read', 'Glob', 'Grep'], agentName: deliveryName(reviewer), maxTurns: maxTurnsFor(reviewer) }, null)
+  const res = await runModel(reviewer, prompt, cwd, { tools: ['Read', 'Glob', 'Grep'], agentName: deliveryName(reviewer), maxTurns: maxTurnsFor(reviewer), clienteId: clienteHistorial(t), tareaId: t.id }, null)
   const parsed = res.code === 0 && res.json?.result ? parseReview(res.json.result) : null
   return { parsed, cost: res.json?.total_cost_usd || 0, turns: res.json?.num_turns || 0 }
 }
@@ -1240,7 +1276,8 @@ async function runTask(t) {
   const prompt = buildPrompt(agent, t, { adjuntos })
   writeFileSync(join(cwd, 'tarea.md'), prompt)
 
-  const opts = { tools: toolsFor(agent, t), agentName: deliveryName(agent), maxTurns: maxTurnsFor(agent) }
+  for (const m of mensajesDeTarea(t, clienteHistorial(t))) anotar(t, m.rol, m.texto)
+  const opts = { tools: toolsFor(agent, t), agentName: deliveryName(agent), maxTurns: maxTurnsFor(agent), clienteId: clienteHistorial(t), tareaId: t.id }
   const res = await runModel(agent, prompt, cwd, opts, t)
   if (cancelados.has(t.id)) return terminarCancelada(t, started)
   let extraCost = 0, extraTurns = 0
@@ -1274,6 +1311,7 @@ async function runTask(t) {
   if (/^NECESITO:/i.test(result)) {
     await updateDoc(ref, { ...base, agentStatus: 'needs_info', agentQuestion: result.replace(/^NECESITO:\s*/i, '').slice(0, 5000) })
     log(`? ${agent.name} necesita información para "${t.tarea}"`)
+    anotar(t, 'pregunta', result.replace(/^NECESITO:\s*/i, ''), agent.id)
     const question = result.replace(/^NECESITO:\s*/i, '').slice(0, 3000)
     const ids = await telegram?.notify(`${agent.name} necesita información para "${t.tarea}":\n\n${question}\n\nResponde a ESTE mensaje (mantén presionado y elige "Responder") y se lo paso para que siga.`)
     rememberQuestion(ids, t.id)
@@ -1290,6 +1328,7 @@ async function runTask(t) {
     await updateDoc(ref, { agentStatus: 'reviewing' }).catch(() => {})
     log(`🔎 ${reviewer.name} revisa "${t.tarea}"`)
     const r1 = await reviewDelivery(reviewer, t, result, cwd)
+    if (r1.parsed?.notas?.length) anotar(t, 'revision', r1.parsed.notas.join('\n'), reviewer.id)
     extraCost += r1.cost; extraTurns += r1.turns
     let corregida = false
     if (r1.parsed?.estado === 'observaciones' && r1.parsed.notas.length) {
@@ -1350,6 +1389,7 @@ async function runTask(t) {
   }
   if (saved) publicarEnDrive(t, n, !fresh.linkTerminada && !docLink, conv.pdfs)
   writeFileSync(join(cwd, 'entrega.md'), result)
+  anotar(t, 'entrega', result, agent.id)
   log(`✔ ${agent.name} entregó "${t.tarea}" en ${Math.round(seconds / 60)} min → Espera Aprobación`)
   telegram?.notify(`${agent.name} terminó "${t.tarea}". Está en Espera Aprobación.`)
   postToChat(GROUP, 'agent', `Terminé "${t.tarea}"${t.cliente ? ' (' + t.cliente + ')' : ''}. Quedó en Espera Aprobación.`, t.id, agent.id)
@@ -1583,6 +1623,9 @@ async function main() {
     pump()
     repartirTareasDeDepartamento()
   }, e => log('Error leyendo tareas:', e.code || e.message))
+
+  // Historial buscable: se llena con las tareas existentes cuando ya cargaron los clientes
+  setTimeout(llenarHistorial, 10_000)
 
   // Pedidos del panel para buscar, revisar e instalar skills
   // Si las reglas aún no están publicadas, reintenta cada minuto sin reiniciar el motor
