@@ -115,12 +115,12 @@ export function objetivoEnAlcance(tipo, objetivo, a) {
 // ---------- Contenedor endurecido ----------
 // montajes: { src (repo, solo lectura), out (resultados) }. uid/gid: el del usuario del PC (no root), para que
 // los resultados queden con su dueño.
-export function argsDocker(tipo, objetivo, { src = '', out, uid = 1000, gid = 1000 } = {}) {
+export function argsDocker(tipo, objetivo, { src = '', out, uid = 1000, gid = 1000, cache = '' } = {}) {
   const def = TIPOS[tipo]
   if (!def) throw new Error('Tipo desconocido')
   if (!out) throw new Error('Falta la carpeta de resultados')
   if (!uid) throw new Error('Los escaneos no corren como root')
-  const tmp = def.herramienta === 'trivy' ? '1500m' : '512m'
+  const tmp = '512m'
   const base = [
     'run', '--rm', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--read-only',
     '--tmpfs', `/tmp:rw,exec,size=${tmp}`, '--user', `${uid}:${gid}`, '--cpus', '1', '--memory', '2g', '--pids-limit', '256',
@@ -132,9 +132,11 @@ export function argsDocker(tipo, objetivo, { src = '', out, uid = 1000, gid = 10
     case 'gitleaks': return [...base, img, 'git', '/src', '--redact', '--no-banner', '--exit-code', '0', '--report-format', 'json', '--report-path', '/out/gitleaks.json']
     case 'osv-scanner': return [...base, img, '--format', 'json', '--output', '/out/osv.json', '-r', '/src']
     case 'semgrep': return [...base, '-e', 'SEMGREP_SEND_METRICS=off', '-e', 'XDG_CONFIG_HOME=/tmp', img, 'semgrep', 'scan', '--config', 'p/owasp-top-ten', '--config', 'p/secrets', '--json', '--output', '/out/semgrep.json', '--metrics', 'off', '--timeout', '30', '/src']
-    case 'trivy': return [...base, img, 'fs', '--scanners', 'vuln,misconfig,secret', '--cache-dir', '/tmp/trivy', '--format', 'json', '--output', '/out/trivy.json', '--quiet', '/src']
-    case 'testssl': return [...base, img, '--jsonfile', '/out/testssl.json', '--quiet', '--color', '0', '--warnings', 'off', '--sneaky', '--fast', `${objetivo}:443`]
-    case 'zap': return [...base, '-w', '/zap/wrk', '--tmpfs', '/home/zap:rw,size=512m', '-v', `${out}:/zap/wrk:rw`, img, 'zap-baseline.py', '-t', objetivo, '-J', 'zap.json', '-m', '2', '-I']
+    // La base de Trivy (~1 GB descomprimida) va en una caché del PC: no cabe en /tmp y así no se baja en cada escaneo
+    case 'trivy': if (!cache) throw new Error('Trivy necesita una carpeta de caché')
+      return [...base, '-v', `${cache}:/cache:rw`, img, 'fs', '--scanners', 'vuln,misconfig,secret', '--cache-dir', '/cache', '--format', 'json', '--output', '/out/trivy.json', '--quiet', '/src']
+    case 'testssl': return [...base, img, '--jsonfile', '/out/testssl.json', '--quiet', '--color', '0', '--warnings', 'off', '--sneaky', `${objetivo}:443`]
+    case 'zap': return [...base, '-w', '/zap/wrk', '--tmpfs', '/home/zap:rw,size=512m,mode=1777', '-v', `${out}:/zap/wrk:rw`, img, 'zap-baseline.py', '-t', objetivo, '-J', 'zap.json', '-m', '2', '-I']
     default: throw new Error('Herramienta desconocida')
   }
 }
@@ -163,7 +165,7 @@ const SEV = (s) => {
   const x = String(s || '').toLowerCase()
   if (/crit/.test(x)) return 'critica'
   if (/high|error|alta/.test(x)) return 'alta'
-  if (/med|warn/.test(x)) return 'media'
+  if (/med|moderate|warn/.test(x)) return 'media'
   if (/low|baja/.test(x)) return 'baja'
   return 'info'
 }
@@ -223,9 +225,18 @@ export function leerTrivy(j) {
   return cerrar('trivy', out)
 }
 
+// Mensajes de la propia herramienta (no son hallazgos del sitio)
+const RUIDO_TESTSSL = /^(engine_problem|cmdline_|scanProblem|scanTime|pre_|optimal_proto|service|clientsimulation|DNS_CAArecord$)/
 export function leerTestssl(j) {
   const filas = Array.isArray(j) ? j : (j?.scanResult || []).flatMap(s => Object.values(s).filter(Array.isArray).flat())
-  return cerrar('testssl', filas.filter(f => !['OK', 'INFO', 'DEBUG'].includes(String(f.severity).toUpperCase()) && f.finding).map(f => ({
+  const vistos = new Set() // el mismo dominio con varias IP repite cada hallazgo
+  const unicas = filas.filter(f => {
+    if (['OK', 'INFO', 'DEBUG'].includes(String(f.severity).toUpperCase()) || !f.finding || RUIDO_TESTSSL.test(f.id)) return false
+    const k = `${f.id}|${f.finding}`
+    if (vistos.has(k)) return false
+    vistos.add(k); return true
+  })
+  return cerrar('testssl', unicas.map(f => ({
     severidad: SEV(f.severity === 'WARN' ? 'low' : f.severity), owasp: 'A04', titulo: `${f.id}: ${corta(f.finding, 140)}`,
     ubicacion: `${f.ip || ''}:${f.port || 443}`, detalle: f.cve ? `CVE: ${f.cve}` : '', referencia: f.id,
   })))
@@ -235,6 +246,7 @@ const RIESGO_ZAP = { 3: 'alta', 2: 'media', 1: 'baja', 0: 'info' }
 export function leerZap(j) {
   const out = []
   for (const s of j?.site || []) for (const a of s.alerts || []) {
+    if (String(a.pluginid) === '10116') continue // "ZAP is Out of Date": es de la herramienta, no del sitio
     const cwe = Number(a.cweid)
     out.push({ severidad: RIESGO_ZAP[Number(a.riskcode)] || 'info', owasp: [319, 311, 326, 327].includes(cwe) ? 'A04' : 'A02',
       titulo: a.name || a.alert, ubicacion: `${s['@name'] || ''} (${a.count || a.instances?.length || 1} URL)`,

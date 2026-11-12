@@ -119,7 +119,9 @@ server.tool('run_scan',
       const out = join(CWD, 'seguridad', `${tipo}-${new Date(inicio).toISOString().replace(/[:.]/g, '-')}`)
       mkdirSync(out, { recursive: true })
       const uid = process.getuid?.() ?? 1000, gid = process.getgid?.() ?? 1000
-      const args = argsDocker(tipo, obj.objetivo, { src, out, uid: uid || 1000, gid: gid || 1000 })
+      const cache = join(LOGS, 'cache-trivy')
+      if (def.herramienta === 'trivy') mkdirSync(cache, { recursive: true })
+      const args = argsDocker(tipo, obj.objetivo, { src, out, uid: uid || 1000, gid: gid || 1000, cache })
       registrar({ tipo, objetivo: obj.objetivo, resultado: 'iniciado', imagen: IMAGENES[def.herramienta] })
       const r = await correr('docker', args, { timeoutMs: (def.vivo ? 20 : 30) * 60_000 })
       const [archivo, leer] = LECTORES[def.herramienta]
@@ -134,7 +136,7 @@ server.tool('run_scan',
       registrar({ tipo, objetivo: obj.objetivo, resultado: 'ok', segundos: Math.round((Date.now() - inicio) / 1000), totales: res.totales })
       return ok({
         tipo, que: def.nombre, objetivo: obj.objetivo, herramienta: IMAGENES[def.herramienta], segundos: Math.round((Date.now() - inicio) / 1000),
-        ...res, owasp: OWASP_2025, carpeta: out.slice(CWD.length + 1),
+        ...res, owasp: Object.fromEntries([...new Set(res.hallazgos.map(h => h.owasp))].sort().map(k => [k, OWASP_2025[k]])), carpeta: out.slice(CWD.length + 1),
         nota: res.total > res.hallazgos.length ? `Se muestran ${res.hallazgos.length} de ${res.total}; el detalle está en la carpeta.` : undefined,
       })
     } catch (e) {

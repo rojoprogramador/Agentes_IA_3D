@@ -62,6 +62,8 @@ test('contenedor endurecido: sin root, sin capacidades, solo lectura, límites y
   assert.ok(!argsDocker('tls', 'ejemplo.com', { out: '/o' }).join(' ').includes('/src'))
   assert.throws(() => argsDocker('codigo', 'x', { src: '/s', out: '/o', uid: 0 }), /root/)
   assert.ok(argsDocker('web_pasivo', 'https://ejemplo.com', { out: '/o' }).includes('zap-baseline.py'))
+  assert.throws(() => argsDocker('vulnerabilidades', 'x', { src: '/s', out: '/o' }), /caché/)
+  assert.ok(argsDocker('vulnerabilidades', 'x', { src: '/s', out: '/o', cache: '/c' }).join(' ').includes('/c:/cache:rw'))
 })
 
 test('OWASP: etiquetas 2021 se pasan a 2025', () => {
@@ -81,8 +83,8 @@ test('lectores: gitleaks nunca devuelve el secreto', () => {
 })
 
 test('lectores: osv, semgrep, trivy, testssl y zap al formato común, ordenados por severidad', () => {
-  const osv = leerOsv({ results: [{ source: { path: '/src/package-lock.json' }, packages: [{ package: { name: 'lodash', version: '4.17.15', ecosystem: 'npm' }, groups: [{ ids: ['GHSA-x'], max_severity: '9.1' }], vulnerabilities: [{ id: 'GHSA-x', aliases: ['CVE-2020-8203'], summary: 'Prototype pollution' }] }] }] })
-  assert.equal(osv.hallazgos[0].severidad, 'critica'); assert.equal(osv.hallazgos[0].owasp, 'A03'); assert.match(osv.hallazgos[0].referencia, /CVE-2020-8203/)
+  const osv = leerOsv({ results: [{ source: { path: '/src/package-lock.json' }, packages: [{ package: { name: 'lodash', version: '4.17.15', ecosystem: 'npm' }, groups: [{ ids: ['GHSA-x'], max_severity: '9.1' }], vulnerabilities: [{ id: 'GHSA-x', aliases: ['CVE-2020-8203'], summary: 'Prototype pollution' }, { id: 'GHSA-y', summary: 'ReDoS', database_specific: { severity: 'MODERATE' } }] }] }] })
+  assert.equal(osv.hallazgos[0].severidad, 'critica'); assert.equal(osv.hallazgos[1].severidad, 'media'); assert.equal(osv.hallazgos[0].owasp, 'A03'); assert.match(osv.hallazgos[0].referencia, /CVE-2020-8203/)
   const sg = leerSemgrep({ results: [
     { check_id: 'r.info', path: '/src/a.js', start: { line: 1 }, extra: { severity: 'INFO', message: 'nota', metadata: {} } },
     { check_id: 'r.sqli', path: '/src/db.js', start: { line: 9 }, extra: { severity: 'ERROR', message: 'SQL injection', metadata: { owasp: ['A03:2021 - Injection'], cwe: ['CWE-89'] } } },
@@ -90,9 +92,10 @@ test('lectores: osv, semgrep, trivy, testssl y zap al formato común, ordenados 
   assert.equal(sg.hallazgos[0].referencia, 'r.sqli'); assert.equal(sg.hallazgos[0].owasp, 'A05'); assert.equal(sg.erroresHerramienta, 1)
   const tv = leerTrivy({ Results: [{ Target: 'Dockerfile', Misconfigurations: [{ ID: 'DS002', Title: 'Corre como root', Severity: 'HIGH', Status: 'FAIL' }, { ID: 'DS001', Status: 'PASS', Severity: 'LOW' }], Vulnerabilities: [{ PkgName: 'openssl', InstalledVersion: '1.1', VulnerabilityID: 'CVE-1', Severity: 'MEDIUM', FixedVersion: '1.2' }] }] })
   assert.deepEqual(tv.totales, { critica: 0, alta: 1, media: 1, baja: 0, info: 0 })
-  const ts = leerTestssl([{ id: 'TLS1', severity: 'LOW', finding: 'offered (deprecated)' }, { id: 'cert_expiration', severity: 'OK', finding: 'ok' }, { id: 'BREACH', severity: 'MEDIUM', finding: 'potentially vulnerable', cve: 'CVE-2013-3587' }])
+  const ts = leerTestssl([{ id: 'TLS1', severity: 'LOW', finding: 'offered (deprecated)' }, { id: 'cert_expiration', severity: 'OK', finding: 'ok' }, { id: 'BREACH', severity: 'MEDIUM', finding: 'potentially vulnerable', cve: 'CVE-2013-3587' }, { id: 'BREACH', ip: '2', severity: 'MEDIUM', finding: 'potentially vulnerable' }, { id: 'engine_problem', severity: 'WARN', finding: 'No engine' }])
   assert.equal(ts.total, 2); assert.equal(ts.hallazgos[0].severidad, 'media'); assert.equal(ts.hallazgos[0].owasp, 'A04')
-  const zp = leerZap({ site: [{ '@name': 'https://ejemplo.com', alerts: [{ name: 'Falta Content-Security-Policy', riskcode: '2', cweid: '693', pluginid: '10038', solution: '<p>Configura CSP</p>', count: '4' }] }] })
+  const zp = leerZap({ site: [{ '@name': 'https://ejemplo.com', alerts: [{ name: 'Falta Content-Security-Policy', riskcode: '2', cweid: '693', pluginid: '10038', solution: '<p>Configura CSP</p>', count: '4' }, { name: 'ZAP is Out of Date', riskcode: '1', pluginid: '10116' }] }] })
+  assert.equal(zp.total, 1)
   assert.equal(zp.hallazgos[0].severidad, 'media'); assert.equal(zp.hallazgos[0].detalle, 'Configura CSP'); assert.equal(zp.hallazgos[0].owasp, 'A02')
 })
 

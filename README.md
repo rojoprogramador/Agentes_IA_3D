@@ -283,7 +283,9 @@ configuración de un cliente **solo dentro del alcance que firmó**:
 Cada escaneo corre en un contenedor desechable y aislado (sin root, sin capacidades, solo lectura, CPU y memoria
 limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-registro.jsonl`. No hay escaneos activos
 (puertos, ataques): no están permitidos en esta versión. Requiere **Docker** en el PC del motor
-(Ubuntu/WSL: `sudo apt-get install -y docker.io && sudo usermod -aG docker $USER`).
+(Ubuntu/WSL: `sudo apt-get install -y docker.io && sudo usermod -aG docker $USER`). El permiso de Docker se aplica
+al abrir una sesión nueva: cierra la terminal (o `wsl --shutdown` desde Windows) antes de encender el motor. La
+primera vez cada herramienta descarga su imagen y Trivy su base (~130 MB, queda en `motor/logs/cache-trivy`).
 
 ### Motores de IA
 
