@@ -189,6 +189,8 @@ export default function AgenciaMotor() {
         <MemoriaEditor tipo="dueno" entradas={perfil} onChange={guardarPerfil} vacio="Aún no hay nada. Ejemplo: «Prefiero textos cortos, sin signos de exclamación.»" />
       </div>
 
+      <PermisosSiempre />
+
       <div className="card">
         <h3 style={{ marginTop: 0, fontSize: 15 }}>Aprendizaje propuesto</h3>
         <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0 }}>
@@ -335,6 +337,36 @@ export default function AgenciaMotor() {
         <button className="btn btn-secondary" onClick={() => setForm(desde(panel, worker?.ajustesEfectivos))}>Deshacer cambios</button>
         <button className="btn btn-primary" disabled={guardando} onClick={guardar}>{guardando ? 'Guardando…' : 'Guardar ajustes'}</button>
       </div>
+    </div>
+  )
+}
+
+// Acciones aprobadas "siempre" (B4): ya no preguntan. Quitar una hace que vuelva a pedir aprobación.
+function PermisosSiempre() {
+  const { showToast } = useApp()
+  const [siempre, setSiempre] = useState([])
+  useEffect(() => onSnapshot(doc(db, 'config', 'permisosAcciones'), d => setSiempre(d.data()?.siempre || []), () => {}), [])
+  const quitar = async (tool) => {
+    try { await setDoc(doc(db, 'config', 'permisosAcciones'), { siempre: siempre.filter(x => x !== tool), updatedAt: serverTimestamp() }, { merge: true }); showToast('Volverá a pedir aprobación', 'info') }
+    catch (e) { console.error(e); showToast('No se pudo quitar', 'error') }
+  }
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0, fontSize: 15 }}>Acciones con aprobación</h3>
+      <p style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 0 }}>
+        Cuando un agente quiere enviar, publicar o gastar (borradores de Gmail, eventos de calendario, archivos en Drive fuera
+        de su carpeta, créditos de Magnific), el motor lo detiene y te pregunta aquí arriba y por Telegram. Sin respuesta en
+        5 minutos, se deniega. En tareas programadas se deniega siempre, salvo lo que esté en esta lista.
+        La lista de acciones está en <code>roles/catalogo.json → accionesConAprobacion</code>.
+      </p>
+      {siempre.length === 0
+        ? <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Ninguna acción aprobada "siempre": todas preguntan.</p>
+        : siempre.map(tool => (
+          <div key={tool} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 10px', background: 'var(--bg-2)', borderRadius: 8, marginBottom: 4, fontSize: 12.5 }}>
+            <code style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tool}</code>
+            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => quitar(tool)}>Quitar</button>
+          </div>
+        ))}
     </div>
   )
 }
