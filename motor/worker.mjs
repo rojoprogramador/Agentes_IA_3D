@@ -21,6 +21,7 @@ import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
 import { codigoEmparejamiento, puedeResponderDesconocido, crearClienteWhatsApp, crearServidorWebhook } from './whatsapp.mjs'
+import { configGeo, analizarRespuesta, resumenGeo, mensajesGeo, tocaGeo } from './geo.mjs'
 import { leerAlertaKuma, tokenValido, clienteDeAlerta, decidir as decidirAlerta, briefIncidente } from './alertas.mjs'
 import { crearTunel } from './tunel.mjs'
 import { herramientasPara, crearEjecutor, crearLlamada, responder } from './herramientas-api.mjs'
@@ -2112,6 +2113,8 @@ async function main() {
   await reiniciarTelegram()
   await reiniciarWhatsApp()
   escucharWhatsApp()
+  escucharGeo()
+  setInterval(() => revisarGeo().catch(e => log('GEO:', e.message)), 30 * 60_000)
   arranqueListo = true
 
   await actualizarEstadoMotores().catch(() => {})
@@ -2300,6 +2303,61 @@ async function atenderWhatsApp(m, cliente) {
   if (c.clienteId) registrarWhatsAppEnHistorial(c, texto, m.id)
   telegram?.notify(`WhatsApp de ${c.nombre || '+' + m.de}${cl ? ` (${cl.nombre})` : ''}:\n\n${texto.slice(0, 1500)}\n\nResponde desde Agencia → WhatsApp.`)
   log(`WhatsApp: mensaje de ${c.nombre || m.de}${cl ? ` (${cl.nombre})` : ''} a la bandeja`)
+}
+
+// ---------- GEO (C4): ¿las IA recomiendan a la marca? ----------
+// Semanal por cliente con geo.activo (ficha → GEO): cada prompt a cada proveedor (máx. 10 × 3), resultado en
+// geoResultados/{clienteId}/items (subcolección: se consulta por fecha sin índices compuestos).
+// Manual: geoPedidos/{id} (estado pendiente → listo/error). Respeta "modelos gratis" del cliente.
+const ARCHIVO_GEO = join(ROOT, 'logs', 'geo-estado.json')
+let midiendoGeo = false
+async function correrGeo(c, motivo = 'semanal') {
+  const cfg = configGeo(c.geo)
+  if (!cfg.marca || !cfg.prompts.length || !cfg.proveedores.length) throw new Error('Faltan marca, preguntas o modelos en la ficha → GEO')
+  const fecha = new Date().toISOString().slice(0, 10)
+  const resultados = [], omitidos = []
+  for (const pid of cfg.proveedores) {
+    const prov = providersById.get(pid)
+    if (!prov || prov.activo === false) { omitidos.push(`${pid}: no existe o está inactivo`); continue }
+    if (prov.gratis && c.permiteModelosGratis !== true) { omitidos.push(`${prov.nombre}: es gratis y el cliente no lo permite`); continue }
+    const api = await apiConfigFor({ modelo: { proveedor: 'api', proveedorId: pid, nombre: '' } })
+    const llamar = crearLlamada({ base: String(api.baseUrl || '').replace(/\/+$/, ''), apiKey: api.apiKey, model: api.model, timeoutMs: 120_000 })
+    for (const prompt of cfg.prompts) {
+      try {
+        const texto = String((await llamar(mensajesGeo(prompt))).content || '')
+        const r = analizarRespuesta(texto, cfg)
+        resultados.push({ proveedor: prov.nombre, ...r })
+        await addDoc(collection(db, 'geoResultados', c.id, 'items'), { clienteId: c.id, fecha, proveedor: prov.nombre, modelo: api.model, prompt, ...r, respuesta: texto.slice(0, 2000), creadoAt: serverTimestamp() })
+      } catch (e) { omitidos.push(`${prov.nombre} / "${prompt.slice(0, 40)}": ${e.message.slice(0, 100)}`) }
+    }
+  }
+  const est = (() => { try { return JSON.parse(readFileSync(ARCHIVO_GEO, 'utf8')) } catch { return {} } })()
+  est[c.id] = Date.now(); writeFileSync(ARCHIVO_GEO, JSON.stringify(est))
+  const s = resumenGeo(resultados)
+  log(`🔎 GEO ${c.nombre} (${motivo}): citada en ${s.citadas}/${s.total} respuestas (${s.pct} %)${omitidos.length ? ` · ${omitidos.length} omitidas` : ''}`)
+  if (s.total) telegram?.notify(`GEO de ${c.nombre}: las IA citaron la marca en ${s.citadas} de ${s.total} respuestas (${s.pct} %).${s.competidores[0] ? ` Competidor más nombrado: ${s.competidores[0].nombre} (${s.competidores[0].pct} %).` : ''}`)
+  return { ...s, omitidos }
+}
+async function revisarGeo() {
+  if (midiendoGeo || enCurso.size) return
+  const est = (() => { try { return JSON.parse(readFileSync(ARCHIVO_GEO, 'utf8')) } catch { return {} } })()
+  const c = [...clientsById.values()].find(x => x.activo !== false && x.geo?.activo === true && tocaGeo(est[x.id]))
+  if (!c) return
+  midiendoGeo = true
+  try { await correrGeo(c) } catch (e) { log(`GEO ${c.nombre}:`, e.message); est[c.id] = Date.now(); writeFileSync(ARCHIVO_GEO, JSON.stringify(est)) } finally { midiendoGeo = false }
+}
+function escucharGeo() {
+  const f = () => onSnapshot(query(collection(db, 'geoPedidos'), where('estado', '==', 'pendiente')), snap => {
+    snap.forEach(async d => {
+      const p = d.data(), c = clientsById.get(p.clienteId)
+      if (midiendoGeo) return
+      midiendoGeo = true
+      try { await updateDoc(d.ref, { estado: 'midiendo' }); const r = c ? await correrGeo(c, 'pedido desde el panel') : null; await updateDoc(d.ref, { estado: c ? 'listo' : 'error', ...(r ? { resumen: { total: r.total, citadas: r.citadas, pct: r.pct, omitidos: r.omitidos.slice(0, 10) } } : { error: 'Cliente no encontrado' }) }) }
+      catch (e) { await updateDoc(d.ref, { estado: 'error', error: String(e.message).slice(0, 300) }).catch(() => {}) }
+      finally { midiendoGeo = false }
+    })
+  }, e => { log('GEO: pedidos sin acceso (publica las reglas); reintento en 1 min:', e.code || e.message); setTimeout(f, 60_000) })
+  f()
 }
 
 // ---------- Alertas de caída (C3): Uptime Kuma → Telegram + tarea al rol DevOps ----------

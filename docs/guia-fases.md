@@ -131,3 +131,48 @@ Agente devops → diagnostico_sitio (DNS · HTTP ×3 con tiempos · certificado 
 enrutamiento del servidor compartido). `diagnostico_sitio` contra sitios reales: tu sitio (bien, certificado de
 Let's Encrypt con 39 días), `expired.badssl.com` (detecta el certificado vencido) y un dominio inexistente.
 **Falta**: conectar un Uptime Kuma real y publicar las reglas.
+
+---
+
+## C4 · GEO (¿las IA recomiendan a la marca?)
+
+**Qué es.** Cada vez más gente le pregunta a ChatGPT, Gemini o similares "¿qué plomero me recomiendas en Cali?".
+GEO (*Generative Engine Optimization*) mide si esas IA nombran al cliente. Cada semana el motor hace las mismas
+preguntas a 2 o 3 modelos y registra si citan la marca, en qué lugar y qué competidores nombran.
+
+**Recorrido.**
+```
+Ficha del cliente → GEO: marca, otros nombres, dominio, competidores, preguntas (≤10), modelos (≤3)
+Motor (cada 30 min revisa; semanal por cliente, con el motor libre)   o   botón "Medir ahora" (geoPedidos)
+  por cada modelo × pregunta: crearLlamada(mensajesGeo(pregunta))   ← la pregunta va SOLA, sin contexto del cliente
+     analizarRespuesta → citada · lugar entre las marcas nombradas · competidores · fragmento
+     → geoResultados/{cliente}/items
+  Telegram: "las IA citaron la marca en 4 de 20 respuestas (20 %)"
+Ficha → GEO: resumen por semana y por modelo, competidores más nombrados, cada respuesta
+```
+
+**Dónde mirar.** `motor/geo.mjs` (puro), `correrGeo`/`revisarGeo` en `motor/worker.mjs`,
+`app/src/components/GeoCliente.jsx`, pestaña GEO de la ficha.
+
+**Por qué así.**
+- **La pregunta va sin contexto**: si le dijéramos al modelo quién es el cliente, lo nombraría siempre y la medición
+  no valdría nada. Se pregunta como lo haría cualquier persona.
+- **Las mismas preguntas cada semana**: así se ve la tendencia (si un cambio en la web o en reseñas hace que las IA
+  empiecen a recomendar la marca).
+- **Coincidencia por palabra completa y sin tildes**: "SAOR" no cuenta dentro de "SAORES"; "PLOMEROS Y ACABADOS
+  CALI" sí cuenta aunque cambien mayúsculas o tildes.
+- **Lugar entre las marcas**: no es lo mismo que te nombren primero que quinto.
+- **Límites (10 × 3)**: 30 llamadas por semana por cliente; con modelos gratis o baratos el costo es casi cero. Se
+  respeta la regla del cliente sobre modelos gratis.
+- **Subcolección por cliente**: permite consultar "las últimas 300 por fecha" sin crear índices a mano en Firestore.
+
+**Conceptos.**
+- **GEO / AEO**: optimizar para aparecer en respuestas de IA (no solo en los 10 enlaces de Google). Influyen las
+  reseñas, menciones en otros sitios, datos estructurados y contenido claro que responda preguntas.
+- **Share of voice**: porcentaje de respuestas que nombran a la marca frente a sus competidores.
+- **No determinismo**: un modelo puede responder distinto a la misma pregunta; por eso importa la tendencia de varias
+  semanas más que una sola medición.
+
+**Verificado.** 4 pruebas nuevas; ciclo completo con dos modelos falsos por HTTP (uno cita la marca en 2.º lugar,
+otro no), confirmando que la pregunta no lleva el nombre del cliente. **Falta**: correrlo con modelos reales (necesita
+proveedores en Modelos de IA) y publicar las reglas.
