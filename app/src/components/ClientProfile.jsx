@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import MemoriaEditor from './MemoriaEditor.jsx'
 import { db } from '../firebase.js'
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import Icon from './Icons.jsx'
 import { emptyClient, slugify, toLines, fromLines } from '../agencia.js'
 
@@ -10,6 +10,7 @@ const TABS = [
   { id: 'marca', label: 'Marca' },
   { id: 'objetivos', label: 'Objetivos' },
   { id: 'activos', label: 'Activos' },
+  { id: 'analitica', label: 'Analítica' },
   { id: 'alcance', label: 'Alcance' },
   { id: 'aprendizajes', label: 'Aprendizajes' },
 ]
@@ -56,7 +57,16 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     ventanaDesde: c.alcanceAutorizado?.ventana?.desde || '',
     ventanaHasta: c.alcanceAutorizado?.ventana?.hasta || '',
     aprendizajes: c.aprendizajes || [],
+    ga4PropertyId: c.analitica?.ga4PropertyId || '',
+    gscSitio: c.analitica?.gscSitio || '',
+    credencialGoogle: '',
   })
+  // Estado de la credencial de Google (lo publica el motor: solo el correo, nunca la clave)
+  const [estadoGoogle, setEstadoGoogle] = useState(null)
+  useEffect(() => {
+    if (tab !== 'analitica') return
+    return onSnapshot(doc(db, 'config', 'agentWorker'), d => setEstadoGoogle(d.data()?.analitica || {}), () => setEstadoGoogle({}))
+  }, [tab])
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const toggleDept = (id) => set('departamentos',
@@ -66,6 +76,16 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
   const handleSave = async () => {
     const nombre = form.nombre.trim()
     if (!nombre) { showToast('El cliente necesita un nombre', 'error'); return }
+    const ga4 = form.ga4PropertyId.replace(/^properties\//, '').trim()
+    if (ga4 && !/^\d{6,12}$/.test(ga4)) { showToast('El ID de propiedad de GA4 son solo números (Administrar → Detalles de la propiedad), no el G-XXXX', 'error'); return }
+    let gsc = form.gscSitio.trim()
+    if (gsc && !/^sc-domain:[a-z0-9.-]+\.[a-z]{2,}$/i.test(gsc) && !/^https?:\/\/\S+$/i.test(gsc)) { showToast('Search Console: sc-domain:ejemplo.com o https://www.ejemplo.com/', 'error'); return }
+    if (/^https?:/i.test(gsc) && !gsc.endsWith('/')) gsc += '/'
+    let credencial = null
+    if (form.credencialGoogle.trim()) {
+      try { credencial = JSON.parse(form.credencialGoogle) } catch { showToast('La credencial no es un JSON válido', 'error'); return }
+      if (credencial.type !== 'service_account' || !credencial.client_email || !/BEGIN PRIVATE KEY/.test(credencial.private_key || '')) { showToast('El JSON debe ser la clave de una cuenta de servicio de Google', 'error'); return }
+    }
     if (form.vigenciaDesde && form.vigenciaHasta) {
       const dias = (Date.parse(form.vigenciaHasta) - Date.parse(form.vigenciaDesde)) / 86400000
       if (dias < 0 || dias > 90) { showToast('La vigencia del alcance debe ser de 0 a 90 días (para más, se firma otra autorización)', 'error'); return }
@@ -93,11 +113,14 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
         ventana: { dias: form.ventanaDias, desde: form.ventanaDesde, hasta: form.ventanaHasta },
       },
       aprendizajes: form.aprendizajes,
+      analitica: { ga4PropertyId: ga4, gscSitio: gsc },
       updatedAt: serverTimestamp(), updatedBy: userEmail,
     }
     delete data.id
     try {
       await setDoc(doc(db, 'clients', c.id), data)
+      // La credencial va a secretos/ (solo el motor la lee; el panel nunca la vuelve a mostrar)
+      if (credencial) await setDoc(doc(db, 'secretos', `cliente_${c.id}_google`), { valor: JSON.stringify(credencial), updatedAt: serverTimestamp() })
       if (c.nombre && c.nombre !== nombre) await onRenamed?.(c.nombre, nombre)
       showToast('Ficha del cliente guardada')
       onClose()
@@ -198,6 +221,31 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
             {field('Repositorios', 'repos', { area: true, rows: 2, hint: 'Uno por línea.' })}
             {field('Carpeta de Google Drive', 'driveFolderId', { placeholder: 'Link o ID de la carpeta', hint: 'Se usa para el link de las entregas aprobadas.' })}
             {field('Biblioteca de fotos (ruta en el PC)', 'bibliotecaPath', { placeholder: 'Ej. SAOR/Biblioteca', hint: 'Relativa a la carpeta de la agencia en Drive.' })}
+          </>}
+
+          {tab === 'analitica' && <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0 }}>
+              El agente de analítica lee solo la propiedad y el sitio de este cliente, con acceso de solo lectura. El cliente debe
+              dar acceso a la cuenta de servicio: en GA4, Administrar → Gestión de acceso a la propiedad → Lector; en Search
+              Console, Configuración → Usuarios y permisos → Restringido.
+            </p>
+            <div className="form-row">
+              {field('ID de propiedad de GA4', 'ga4PropertyId', { placeholder: '123456789', hint: 'Números (Administrar → Detalles de la propiedad). No es el G-XXXX.' })}
+              {field('Sitio de Search Console', 'gscSitio', { placeholder: 'sc-domain:ejemplo.com', hint: 'Propiedad de dominio (sc-domain:) o prefijo de URL (https://…/).' })}
+            </div>
+            <div style={{ fontSize: 12.5, padding: 10, background: 'var(--bg-2)', borderRadius: 8 }}>
+              {estadoGoogle === null ? 'Consultando al motor…'
+                : estadoGoogle.clientes?.[c.id] ? <>Credencial propia del cliente: <code>{estadoGoogle.clientes[c.id]}</code> (dale acceso a este correo)</>
+                : estadoGoogle.cuentaAgencia ? <>Usa la cuenta de la agencia: <code>{estadoGoogle.cuentaAgencia}</code> (el cliente debe darle acceso a este correo)</>
+                : 'No hay credencial: carga la de la agencia en Agencia → Motor → Claves, o una propia del cliente aquí abajo.'}
+            </div>
+            {field('Credencial propia del cliente (opcional)', 'credencialGoogle', { area: true, rows: 3, placeholder: 'Pega el JSON de la cuenta de servicio (solo si el cliente usa la suya)', hint: 'Se guarda aparte y no se vuelve a mostrar.' })}
+            {estadoGoogle?.clientes?.[c.id] && (
+              <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', alignSelf: 'flex-start' }}
+                onClick={async () => { if (!confirm('¿Quitar la credencial propia de este cliente? Se usará la de la agencia.')) return; try { await deleteDoc(doc(db, 'secretos', `cliente_${c.id}_google`)); showToast('Credencial quitada', 'info') } catch { showToast('No se pudo quitar', 'error') } }}>
+                Quitar credencial propia
+              </button>
+            )}
           </>}
 
           {tab === 'alcance' && <>

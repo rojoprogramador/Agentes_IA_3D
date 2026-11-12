@@ -25,6 +25,7 @@ export const SECRETOS_MOTOR = [
   { id: 'GEMINI_API_KEY', nombre: 'Clave de Gemini (Google AI Studio)', ayuda: 'Para el motor Gemini CLI. Sácala en aistudio.google.com → Get API key.' },
   { id: 'ANTHROPIC_API_KEY', nombre: 'Clave de API de Anthropic', ayuda: 'Solo si el plan de Claude es "Clave de API" (console.anthropic.com). Con Pro o Max el motor la ignora para no cobrarte por API.' },
   { id: 'PAGESPEED_API_KEY', nombre: 'Clave de PageSpeed Insights', ayuda: 'Para el agente de SEO técnico. Es gratis: console.cloud.google.com → APIs → PageSpeed Insights API → Credenciales. Sin clave funciona con un cupo muy bajo.' },
+  { id: 'GOOGLE_ANALITICA_SA', nombre: 'Cuenta de servicio de Google (analítica de la agencia)', ayuda: 'JSON de una cuenta de servicio (Google Cloud → IAM → Cuentas de servicio → Claves). Cada cliente le da acceso de Lector en GA4 y en Search Console. Un cliente también puede tener la suya en su ficha.' },
 ]
 const PLANES = [
   { id: 'pro', nombre: 'Claude Pro' },

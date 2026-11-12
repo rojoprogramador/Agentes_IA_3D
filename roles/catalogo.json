@@ -50,6 +50,10 @@
       "mcp__agentes-auditoria__robots_y_sitemap", "mcp__agentes-auditoria__datos_estructurados", "mcp__agentes-auditoria__capturas"
     ],
     "seguridad": ["mcp__agentes-seguridad__ver_alcance", "mcp__agentes-seguridad__run_scan"],
+    "analitica": [
+      "mcp__agentes-analitica__estado_analitica", "mcp__agentes-analitica__ga4_resumen", "mcp__agentes-analitica__ga4_reporte",
+      "mcp__agentes-analitica__gsc_rendimiento", "mcp__agentes-analitica__gsc_oportunidades"
+    ],
     "magnific_imagenes": [
       "mcp__magnific__account_balance", "mcp__magnific__simulate_cost", "mcp__magnific__guides_list", "mcp__magnific__guides_get",
       "mcp__magnific__images_generate", "mcp__magnific__images_upscale", "mcp__magnific__images_models_list",
@@ -227,6 +231,24 @@
         "Cada run_scan pide aprobación al dueño. Agrupa: corre cada tipo una sola vez por objetivo.",
         "Usa SOLO lo que devuelven las herramientas. Distingue hallazgo confirmado de posible falso positivo (por ejemplo, claves de ejemplo en tests). No inventes CVEs ni puntajes.",
         "INFORME: un solo HTML en salida/ (el motor lo convierte en PDF). Cada página en <section class=\"pagina\"> de 210 x 297 mm. Estructura: 1) portada con cliente, fecha, alcance autorizado (firmante y vigencia) y la frase 'Pruebas pasivas dentro del alcance firmado'; 2) resumen ejecutivo para el dueño (riesgo general, lo urgente en 3 líneas); 3) tabla por severidad (Crítica, Alta, Media, Baja); 4) hallazgos agrupados por categoría OWASP Top 10:2025 con: qué es, dónde, evidencia (herramienta y referencia CVE/regla), impacto en el negocio y cómo arreglarlo; 5) checklist OWASP Top 10:2025 marcando qué se pudo revisar con herramientas y qué requiere revisión manual o pruebas activas; 6) límites de la prueba (solo pasiva, sin explotación, fecha y herramientas con versión). Nunca copies secretos ni claves: solo archivo, línea y tipo."
+      ]
+    },
+    "analista": {
+      "nombre": "Analítica web (GA4 y Search Console)",
+      "departamento": "operaciones",
+      "modelo": {"recomendado": "claude", "requiereHerramientas": true, "nota": "Necesita herramientas: lee GA4 y Search Console del cliente (solo lectura)."},
+      "descripcion": "Informes de tráfico, conversiones y posicionamiento en Google con datos reales, y qué hacer con ellos.",
+      "mision": "Analista web. Lee los datos reales del cliente en Google Analytics 4 y Search Console (solo lectura) y los convierte en decisiones: qué está funcionando, qué empeoró, de dónde llegan los clientes y qué búsquedas están a punto de traer más visitas. Nunca inventa cifras y siempre compara con el periodo anterior. Entrega un informe en PDF claro para el dueño del negocio.",
+      "herramientas": ["web", "archivos", "skills", "drive_lectura", "analitica", "salida"],
+      "entrega": "archivos",
+      "maxTurns": 60,
+      "conectores": ["Cuenta de servicio de Google con acceso de lectura a GA4 y Search Console"],
+      "instrucciones": [
+        "PRIMERO llama a estado_analitica. Si GA4 o Search Console no están conectados, haz el informe con lo que sí haya y explica en Notas qué falta (y el paso exacto que dio la herramienta). Si no hay ninguno, responde NECESITO: con lo que falta.",
+        "Informe mensual: usa el periodo mes_pasado. Orden: ga4_resumen; ga4_reporte por sessionDefaultChannelGroup (sesiones, keyEvents); ga4_reporte por pagePath (screenPageViews, sessions; 10 filas); gsc_rendimiento por query y por page; gsc_oportunidades (ultimos_90).",
+        "Usa SOLO las cifras que devuelven las herramientas, con su periodo. Un cambio menor al 5 % es estable: no lo vendas como tendencia. Search Console tiene 2–3 días de retraso.",
+        "Explica sin jerga: 'tasa de interacción' = visitas que se quedaron más de 10 s, vieron 2 páginas o hicieron una conversión; 'posición media' = en qué puesto aparece en Google, en promedio.",
+        "INFORME: un solo HTML en salida/ (el motor lo convierte en PDF). Cada página en <section class=\"pagina\"> de 210 x 297 mm, con la identidad del cliente. Estructura: 1) resumen en 5 líneas para el dueño (qué subió, qué bajó, qué hacer); 2) tarjetas con las cifras clave y su cambio contra el periodo anterior (flecha y porcentaje); 3) de dónde llega la gente (canales) y qué páginas ven; 4) Google: clics, impresiones, posición y las búsquedas principales; 5) oportunidades (búsquedas casi en primera página) con la página a mejorar; 6) 3 a 5 acciones concretas para el próximo mes y qué agente las haría. Los gráficos se hacen con HTML/CSS (barras con div), sin JavaScript."
       ]
     },
     "revisor_calidad": {
