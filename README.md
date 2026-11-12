@@ -172,6 +172,22 @@ Otros comandos dentro de `motor/`:
 al agente en el momento, la tarea vuelve a "pendiente" y queda detenida: no la retoma sola. Lo que alcanzó a hacer
 queda en su carpeta de trabajo. Pulsa **Reanudar** (o envíala a Correcciones con una nota) para que siga.
 
+### Acciones que piden tu aprobación
+
+Los agentes no tienen terminal, pero algunas herramientas sí tienen efecto fuera del sistema: crear borradores de
+Gmail, crear o cambiar eventos del calendario (mandan invitaciones), crear o compartir archivos en Drive y gastar
+créditos de Magnific. Cada vez que un agente quiere usar una, **el motor lo detiene y te pregunta**: aparece un aviso
+arriba en el panel y un mensaje con botones en Telegram:
+
+- **Una vez** · **Toda esta tarea** (no vuelve a preguntar por esa acción en esa tarea) · **Siempre** · **Denegar**.
+- Sin respuesta en **5 minutos**, se deniega. En **tareas programadas** se deniega siempre (nadie está mirando),
+  salvo lo aprobado "siempre".
+- Si se deniega, el agente no insiste: deja el contenido listo en la entrega para que lo hagas tú.
+- Crear el documento de entrega en la carpeta de Drive del propio agente no pregunta: es su forma normal de entregar.
+
+Lo aprobado "siempre" se ve y se quita en **Agencia → Motor → Acciones con aprobación**. La lista de herramientas
+está en `roles/catalogo.json → accionesConAprobacion`.
+
 ### Los dos links de la tarea
 
 | Campo | Para qué sirve |
