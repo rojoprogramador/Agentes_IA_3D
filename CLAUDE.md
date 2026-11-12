@@ -158,6 +158,11 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `whatsappMensajes` (entrante) + historial (`rol: 'whatsapp'`) + aviso por Telegram; nunca responde un agente.
   Respuestas del panel: `whatsappMensajes` saliente `pendiente_envio` → `enviarDesdePanel`. Panel: Agencia → WhatsApp
   (`AgenciaWhatsApp.jsx`) y tarjeta en Motor. Secretos `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`, `CLOUDFLARE_TUNNEL_TOKEN`.
+- Paid media (C1): `motor/ads.mjs` (puro con pruebas) y `motor/ads-server.mjs` (MCP `agentes-ads`: estado_ads,
+  ads_auditoria, ads_terminos_busqueda; solo lectura, sin herramientas de cambio). `entornoPorCliente` (worker) junta lo
+  que se inyecta por cliente (B6, B7, C1): `secretos/cliente_<id>_googleads|metaads` o `GOOGLE_ADS_CRED`/`META_ADS_TOKEN`,
+  `clients.ads {googleAdsCustomerId, metaAdAccountId, topeMensual}`. Rol `paid_media`, grupo `ads`, tipo `auditoria_ads`.
+  Explicación de cada fase C/D: `docs/guia-fases.md`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

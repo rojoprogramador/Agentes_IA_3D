@@ -110,6 +110,16 @@ export const EXAMPLE_TASK_TYPES = [
     checklist: ['Todas las cifras vienen de GA4 o Search Console con su periodo', 'Compara con el periodo anterior', 'Termina con 3 a 5 acciones concretas', 'Explica sin jerga'],
     revisor: 'revisor_calidad', formatoEntrega: 'archivos', herramientas: ['analitica', 'salida'],
   },
+  {
+    id: 'auditoria_ads', departamento: 'marketing', rol: 'paid_media', nombre: 'Auditoría de anuncios (PDF)',
+    descripcion: 'Google Ads y Meta Ads: gasto, resultados, desperdicio y propuestas. No cambia nada en las cuentas.',
+    plantillaBrief: [
+      { campo: 'objetivo', etiqueta: 'Objetivo (más llamadas, leads, ventas)', tipo: 'texto', requerido: false },
+      { campo: 'periodo', etiqueta: 'Periodo (por defecto, últimos 28 días)', tipo: 'texto', requerido: false },
+    ],
+    checklist: ['Todas las cifras vienen de las cuentas con su periodo', 'Cada propuesta trae evidencia y efecto esperado', 'Dice si el gasto va a pasar del tope', 'Aclara que no se cambió nada'],
+    revisor: 'revisor_calidad', formatoEntrega: 'archivos', herramientas: ['ads', 'salida'],
+  },
 ]
 
 export const FIELD_TYPES = [
@@ -135,6 +145,7 @@ export const emptyClient = (nombre = '') => ({
   objetivos: [],
   activos: { web: '', redes: '', repos: [], driveFolderId: '', bibliotecaPath: '' },
   analitica: { ga4PropertyId: '', gscSitio: '' },
+  ads: { googleAdsCustomerId: '', metaAdAccountId: '', topeMensual: 0 },
   alcanceAutorizado: { dominios: [], repos: [], ips: [], subdominios: false, notas: '', autorizadoPor: '', cargo: '', fecha: '', documento: '', vigenciaDesde: '', vigenciaHasta: '', ventana: { dias: [], desde: '', hasta: '' } },
   departamentos: [],
   aprendizajes: [],
@@ -180,6 +191,7 @@ export const PERMISOS = [
   { id: 'editor_video', label: 'Editar video (servidor de medios)' },
   { id: 'magnific_imagenes', label: 'Generar imágenes con Magnific (de pago)' },
   { id: 'auditoria', label: 'Auditar sitios web (PageSpeed, rastreo, accesibilidad, schema)', ayuda: 'Solo sitios públicos; no modifica nada' },
+  { id: 'ads', label: 'Leer Google Ads y Meta Ads del cliente', ayuda: 'Solo lectura: audita y propone, no cambia campañas' },
   { id: 'analitica', label: 'Leer GA4 y Search Console del cliente', ayuda: 'Solo lectura y solo del cliente de la tarea' },
   { id: 'seguridad', label: 'Escaneos de seguridad pasivos (Docker)', ayuda: 'Solo dentro del alcance firmado del cliente; cada escaneo pide tu aprobación' },
   { id: 'gmail', label: 'Leer tu Gmail y crear borradores', sensible: true },
