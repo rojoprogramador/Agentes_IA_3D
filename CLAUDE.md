@@ -126,6 +126,15 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   redirección se resuelve por DNS y se rechaza si es privada; IPv4 primero (WSL). `runClaude` lo declara con
   `--mcp-config logs/mcp-auditoria.json` si hay herramientas `mcp__agentes-auditoria__*` y pasa `PAGESPEED_API_KEY`
   (secreto del panel). Grupo `auditoria` (solo Claude), roles `seo_tecnico` y `qa`, tipos `auditoria_seo` y `qa_sitio`.
+- Seguridad pasiva (B6): `motor/seguridad.mjs` (puro con pruebas: `TIPOS`, `IMAGENES` con versión fija,
+  `alcanceVigente` (firmante, documento, vigencia ≤ 90 días, ventana solo para tipos `vivo`), `objetivoEnAlcance`
+  (repos normalizados, dominios con `*.`/subdominios, IPs y CIDR ≥ /8), `argsDocker` (--rm, --cap-drop ALL,
+  no-new-privileges, --read-only, tmpfs, uid del PC, --cpus 1, --memory 2g, --pids-limit 256, --network none si no hace
+  falta), lectores gitleaks/osv/semgrep/trivy/testssl/zap → formato común con OWASP Top 10:2025, `candadoLibre`).
+  `motor/seguridad-server.mjs` (MCP `agentes-seguridad`: `ver_alcance`, `run_scan`; clona el repo en la tarea, candado
+  `logs/seguridad.lock`, registro `logs/seguridad-registro.jsonl`). El worker lo declara con `--mcp-config` y pasa
+  `AGENTES_ALCANCE` = `clients.alcanceAutorizado` del cliente de la tarea. `run_scan` está en `accionesConAprobacion`.
+  Rol `auditor_seguridad`, grupo `seguridad` (solo Claude), tipo `analisis_repo`. Ficha → Alcance ampliada.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

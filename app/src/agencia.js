@@ -91,6 +91,16 @@ export const EXAMPLE_TASK_TYPES = [
     checklist: ['Cada fallo dice página, qué pasa, evidencia y prioridad', 'Incluye capturas de móvil y escritorio', 'Lista lo que hay que revisar a mano en accesibilidad'],
     revisor: null, formatoEntrega: 'archivos', herramientas: ['auditoria', 'salida'],
   },
+  {
+    id: 'analisis_repo', departamento: 'seguridad', rol: 'auditor_seguridad', nombre: 'Análisis de seguridad de un repositorio (PDF)',
+    descripcion: 'Secretos filtrados, dependencias vulnerables y análisis estático del código, sin tocar producción.',
+    plantillaBrief: [
+      { campo: 'repo', etiqueta: 'Repositorio (debe estar en el alcance del cliente)', tipo: 'texto', requerido: true },
+      { campo: 'contexto', etiqueta: 'Qué es la aplicación y qué datos maneja', tipo: 'texto_largo', requerido: false },
+    ],
+    checklist: ['Solo se escaneó lo autorizado y vigente', 'Ningún secreto aparece copiado en el informe', 'Cada hallazgo trae herramienta, referencia y cómo arreglarlo', 'Incluye el checklist OWASP Top 10:2025 y los límites de la prueba'],
+    revisor: null, formatoEntrega: 'archivos', herramientas: ['seguridad', 'salida'],
+  },
 ]
 
 export const FIELD_TYPES = [
@@ -115,7 +125,7 @@ export const emptyClient = (nombre = '') => ({
   marca: { tono: '', colores: [], logoUrl: '', palabrasSi: [], palabrasNo: [] },
   objetivos: [],
   activos: { web: '', redes: '', repos: [], driveFolderId: '', bibliotecaPath: '' },
-  alcanceAutorizado: { dominios: [], repos: [], notas: '', autorizadoPor: '', fecha: '' },
+  alcanceAutorizado: { dominios: [], repos: [], ips: [], subdominios: false, notas: '', autorizadoPor: '', cargo: '', fecha: '', documento: '', vigenciaDesde: '', vigenciaHasta: '', ventana: { dias: [], desde: '', hasta: '' } },
   departamentos: [],
   aprendizajes: [],
 })
@@ -160,6 +170,7 @@ export const PERMISOS = [
   { id: 'editor_video', label: 'Editar video (servidor de medios)' },
   { id: 'magnific_imagenes', label: 'Generar imágenes con Magnific (de pago)' },
   { id: 'auditoria', label: 'Auditar sitios web (PageSpeed, rastreo, accesibilidad, schema)', ayuda: 'Solo sitios públicos; no modifica nada' },
+  { id: 'seguridad', label: 'Escaneos de seguridad pasivos (Docker)', ayuda: 'Solo dentro del alcance firmado del cliente; cada escaneo pide tu aprobación' },
   { id: 'gmail', label: 'Leer tu Gmail y crear borradores', sensible: true },
   { id: 'calendario', label: 'Ver y crear eventos en tu calendario', sensible: true },
 ]

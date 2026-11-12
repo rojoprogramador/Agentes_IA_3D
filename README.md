@@ -260,6 +260,31 @@ Cada hallazgo lleva la cifra medida y la herramienta que la midió: el agente no
 carga una clave gratis en **Agencia → Motor → Clave de PageSpeed Insights** (sin clave el cupo diario es mínimo).
 El rastreo va despacio (una página a la vez) para no cargar el servidor del cliente.
 
+### Seguridad pasiva (Docker)
+
+El rol **Auditoría de seguridad (pasiva)** (tipo *Análisis de seguridad de un repositorio*) revisa el código y la
+configuración de un cliente **solo dentro del alcance que firmó**:
+
+1. El cliente firma la autorización (`docs/plantillas/autorizacion-pruebas-seguridad.md`; que la revise un abogado).
+2. Un admin la carga en la ficha del cliente → **Alcance**: dominios, IPs, repositorios, vigencia (máximo 90 días),
+   ventana horaria para pruebas en vivo, firmante y link al documento firmado.
+3. El agente pide cada escaneo y **tú lo apruebas** (como cualquier acción con efecto externo). El motor lo rechaza si
+   el objetivo no está en el alcance, si venció o si está fuera de la ventana.
+
+| Tipo | Herramienta | Toca producción |
+|---|---|---|
+| secretos | gitleaks (también el historial de git) | No |
+| dependencias | osv-scanner | No |
+| codigo | semgrep (reglas OWASP Top 10) | No |
+| vulnerabilidades | trivy (dependencias, Dockerfile/IaC, secretos) | No |
+| tls | testssl.sh | Sí, en la ventana |
+| web_pasivo | OWASP ZAP baseline (observa, no ataca) | Sí, en la ventana |
+
+Cada escaneo corre en un contenedor desechable y aislado (sin root, sin capacidades, solo lectura, CPU y memoria
+limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-registro.jsonl`. No hay escaneos activos
+(puertos, ataques): no están permitidos en esta versión. Requiere **Docker** en el PC del motor
+(Ubuntu/WSL: `sudo apt-get install -y docker.io && sudo usermod -aG docker $USER`).
+
 ### Motores de IA
 
 Cada agente elige su motor en **Agentes → Editar → Modelo de IA**; **Agencia → Modelos de IA** muestra cuáles tienen
