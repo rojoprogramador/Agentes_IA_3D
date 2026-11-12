@@ -112,6 +112,22 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Aprendizaje propuesto (B2): el motor propone (memoria o skill) y solo un admin decide.
+    // El robot solo crea en 'pendiente' y solo marca 'instalada'/'error' una skill que el admin ya aprobó.
+    match /propuestas/{id} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if isAgentBot() && request.resource.data.estado == 'pendiente'
+        && request.resource.data.tipo in ['memoria', 'skill'];
+      allow update: if (isAdmin()
+          && request.resource.data.tipo == resource.data.tipo
+          && request.resource.data.destino == resource.data.destino
+          && request.resource.data.estado in ['pendiente', 'aprobada', 'descartada'])
+        || (isAgentBot() && resource.data.estado == 'aprobada' && resource.data.tipo == 'skill'
+          && request.resource.data.estado in ['instalada', 'error']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'ruta', 'instaladaAt', 'error']));
+      allow delete: if isAdmin();
+    }
+
     // Config (lista de clientes): leer todos, escribir solo admin
     match /config/{docId} {
       allow read: if isAuth();
