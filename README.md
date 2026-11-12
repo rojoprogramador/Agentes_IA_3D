@@ -198,6 +198,10 @@ Las pantallas **Agentes**, **Clientes** y **Agencia** solo las ve el Super Admin
   tienen una memoria corta que va en cada tarea. Se llena con tus correcciones y la editas en la ficha. Si algo nuevo
   no cabe, hay que consolidar (editar o quitar) en vez de acumular; las entradas con claves, texto invisible o
   instrucciones para saltarse las reglas se rechazan.
+- **Historial buscable**: todo lo que pasa en las tareas (brief, entregas, observaciones del revisor, tus correcciones,
+  preguntas y respuestas) queda en `motor/logs/historial.db`. En cada tarea el agente tiene la herramienta
+  `buscar_historial` para consultar lo que ya se hizo **con ese mismo cliente** (nunca con otros). Las claves se
+  borran antes de guardar. Al encender, el motor agrega las tareas que ya existen.
 - **Clientes**: la ficha de cada cliente (negocio, marca, objetivos, activos, alcance, aprendizajes y departamentos
   contratados). Un agente solo recibe la ficha del cliente de su tarea; nunca ve la de otros clientes.
 - **Agencia → Tareas**: todas las tareas agrupadas por departamento, con filtro por cliente. Es la misma lista que

@@ -16,7 +16,7 @@ export const usoMemoria = (entradas) => {
 }
 
 // Rechaza lo que no debe entrar nunca a la memoria (se repite en cada tarea, así que sería permanente)
-const CREDENCIAL = /(sk-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(contrase(ñ|n)a|password|passwd|token|api[_ -]?key|secret)\s*[:=]\s*\S{6,})/i
+export const CREDENCIAL = /(sk-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(contrase(ñ|n)a|password|passwd|token|api[_ -]?key|secret)\s*[:=]\s*\S{6,})/i
 const INVISIBLE = /[​-‏‪-‮⁠-⁤﻿­]/
 const INYECCION = /(ignora(r)?\s+(todas\s+)?(las\s+)?instrucciones|ignore\s+(all\s+)?(previous|prior|above)\s+instructions|olvida\s+(tus|las)\s+(reglas|instrucciones)|system\s+prompt|eres\s+ahora\s+un|you\s+are\s+now\s+a|desactiva\s+(las\s+)?reglas|developer\s+mode)/i
 const EXFILTRA = /https?:\/\/\S+[?&](token|key|secret|password|pass|auth)=/i

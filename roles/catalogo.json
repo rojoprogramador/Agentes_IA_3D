@@ -4,6 +4,7 @@
     "web": ["WebSearch", "WebFetch"],
     "archivos": ["Read", "Glob", "Grep"],
     "skills": ["Skill"],
+    "historial": ["mcp__agentes-media__buscar_historial"],
     "drive_lectura": [
       "mcp__claude_ai_Google_Drive__search_files",
       "mcp__claude_ai_Google_Drive__read_file_content",
