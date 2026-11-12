@@ -44,7 +44,8 @@ Funciona con **Claude Code** y tu propia suscripción de Claude. Código abierto
 - **Buscador de skills**: busca, revisa e instala skills de Claude para tus agentes desde el panel.
 - **Varios motores de IA trabajando en paralelo**: Claude Code, **Antigravity** (Google AI Pro/Ultra, con modelos
   Gemini, Claude y GPT-OSS), **Codex** (cuenta de ChatGPT) y **Gemini CLI** (clave de API) trabajan con herramientas;
-  además, modelos de solo texto con API compatible con OpenAI (Groq, Cerebras, OpenRouter, Gemini, Ollama…). Si uno
+  además, modelos con API compatible con OpenAI (Groq, Cerebras, OpenRouter, Gemini, Ollama…) que leen webs y adjuntos
+  y escriben en `salida/` con herramientas acotadas. Si uno
   llega a su límite de uso, la tarea pasa sola al siguiente.
 - **Chat con cada agente y chat de grupo**: los agentes te preguntan lo que les falta y colaboran con `@menciones`.
 - **Asistente coordinador por Telegram** (opcional): háblale por texto o nota de voz, reparte tareas y te avisa
@@ -316,7 +317,7 @@ sesión en el PC del motor.
 | Antigravity | Google AI Pro/Ultra (`agy`) | Web, escribir en `salida/`, **edición de video** (las herramientas del motor) e **imágenes** con su propio generador | Elige el modelo (Gemini, Claude, GPT-OSS) en cada agente. Sin terminal. Sirve para los roles de video e imágenes (en vez de Magnific). No genera video desde cero. |
 | Codex | Cuenta de ChatGPT | Escribe en la carpeta de la tarea (sandbox) | |
 | Gemini CLI | `GEMINI_API_KEY` | Escribe en la carpeta de la tarea | Clave sin facturación = plan gratis. |
-| API (solo texto) | Clave en Modelos de IA | Ninguna | Para textos con el brief completo. |
+| API | Clave en Modelos de IA | `leer_url` (solo webs públicas), `leer_adjunto` y `escribir_archivo` (solo en `salida/`, el HTML se vuelve PDF) | Para textos y documentos. Si el modelo no acepta herramientas, responde sin ellas. |
 
 - **En paralelo**: una tarea por agente y, por defecto, una por motor (dos por API): `negocio.json → paralelo`, por
   ejemplo `{ "claude": 1, "antigravity": 2, "api": 3 }`. Más paralelo gasta los límites de cada plan más rápido.

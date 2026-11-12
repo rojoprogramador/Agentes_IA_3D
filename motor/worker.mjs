@@ -20,6 +20,8 @@ import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
+import { herramientasPara, crearEjecutor, crearLlamada, responder } from './herramientas-api.mjs'
+import dnsPromesas from 'node:dns/promises'
 import { TIEMPO_APROBACION_MS, HERRAMIENTA_PERMISOS, SENSIBLES_BASE, separarHerramientas, decisionPrevia, nombreAccion, resumenAccion, respuestaPermiso, botonesTelegram, parsearCallback, textoAviso } from './aprobaciones.mjs'
 import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
@@ -945,7 +947,7 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
     t.linkTerminada ? `Link de referencia o entregable: ${t.linkTerminada}` : '',
   ]
   if (adjuntos?.links.length) lines.push(`\nLinks adjuntos al brief:\n${adjuntos.links.map(l => '- ' + l).join('\n')}`)
-  if (adjuntos?.copied.length) lines.push(`\nArchivos adjuntos (en tu carpeta de trabajo, léelos con Read):\n${adjuntos.copied.map(l => '- ' + l).join('\n')}`)
+  if (adjuntos?.copied.length) lines.push(`\nArchivos adjuntos (en tu carpeta de trabajo, léelos con ${usaApi(agent, t) ? 'leer_adjunto' : 'Read'}):\n${adjuntos.copied.map(l => '- ' + l).join('\n')}`)
   if (adjuntos?.missing.length) lines.push(`\nNo se encontraron estos adjuntos (menciónalo en Notas): ${adjuntos.missing.join(', ')}`)
   if (revision) {
     if (t.agentQuestion) lines.push(`\nTu pregunta anterior a ${OWNER}:\n${t.agentQuestion}`)
@@ -987,7 +989,7 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
   if (!usaApi(agent, t) && toolsFor(agent, t).includes('mcp__agentes-media__buscar_historial')) {
     lines.push(`\n## Historial${client ? ' de ' + client.nombre : ''}\nSi tienes la herramienta buscar_historial, puedes buscar en las tareas anteriores${client ? ' de este cliente' : ' internas'} (entregas, correcciones y respuestas de ${OWNER}). Úsala antes de proponer algo que quizá ya se hizo o se corrigió.`)
   }
-  if (!usaApi(agent, t) && toolsFor(agent, t).some(x => x.startsWith('Write('))) lines.push(SALIDA_RULES)
+  if (usaApi(agent, t) ? gruposDe(agent, t).includes('salida') : toolsFor(agent, t).some(x => x.startsWith('Write('))) lines.push(SALIDA_RULES)
   const drive = driveRules(agent, t)
   if (drive) lines.push(drive)
   lines.push('\nSigue las reglas de CLAUDE.md. Tu respuesta final es el entregable.')
@@ -996,7 +998,7 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
 
 const SALIDA_RULES = `
 ## Archivos entregables
-- Guarda tus archivos en la carpeta salida/ de esta tarea (es la única donde puedes escribir, con Write o Edit).
+- Guarda tus archivos en la carpeta salida/ de esta tarea (es la única donde puedes escribir, con Write o Edit; si tu modelo no tiene Write, con la herramienta escribir_archivo).
 - Para un PDF (brochure, portafolio, propuesta, flyer, presentación, informe): crea un HTML autocontenido
   salida/<nombre-corto>.html. El motor lo convierte en PDF y saca la vista previa de cada página; no crees el PDF tú.
   - Cada página es un <section class="pagina">. CSS: @page { size: A4; margin: 0 } y
@@ -1209,13 +1211,17 @@ async function providerKey(id) {
   return apiKey
 }
 
-// Tareas que necesitan herramientas siempre van con Claude Code, aunque el agente tenga otro modelo
+// Tareas que necesitan herramientas que un modelo por API no tiene van con Claude Code, aunque el agente tenga otro
+// modelo. Desde B8 los modelos por API pueden leer webs y adjuntos y escribir en salida/ (grupos GRUPOS_API).
+const GRUPOS_API = ['web', 'archivos', 'skills', 'drive_lectura', 'salida', 'historial']
 function needsTools(agent, t) {
   if (perfilDe(agent).modelo?.requiereHerramientas) return true
-  // Permisos extra de la tarea (escribir archivos, Drive, video…) solo los usa Claude Code
-  if (t && permisosDeTarea(t, loadCatalogo().herramientas || {}).length) return true
+  const grupos = t ? permisosDeTarea(t, loadCatalogo().herramientas || {}) : []
+  if (grupos.some(g => !GRUPOS_API.includes(g))) return true
   const tipo = t && taskTypesById.get(t.tipoTareaId)
-  return ['video', 'dev', 'qa', 'seguridad'].includes(tipo?.capacidad) || ['archivos', 'video', 'pr'].includes(tipo?.formatoEntrega)
+  if (['video', 'dev', 'qa', 'seguridad'].includes(tipo?.capacidad) || ['video', 'pr'].includes(tipo?.formatoEntrega)) return true
+  // Entrega en archivos: un modelo por API puede hacerla si la tarea le da salida/ (escribir_archivo)
+  return tipo?.formatoEntrega === 'archivos' && !grupos.includes('salida')
 }
 function usaApi(agent, t) {
   const m = agent?.modelo
@@ -1234,25 +1240,31 @@ async function apiConfigFor(agent) {
   return { baseUrl: p.baseUrl, apiKey: await providerKey(p.id), model: m.nombre || p.modelos?.[0], nombre: p.nombre }
 }
 
-async function runApi({ baseUrl, apiKey, model, nombre }, prompt) {
+// B8: con cwd y grupos, el modelo recibe herramientas (leer_url, leer_adjunto, escribir_archivo en salida/) en el
+// formato de "function calling" de OpenAI. Si el proveedor no las soporta, se repite sin ellas.
+async function runApi({ baseUrl, apiKey, model, nombre }, prompt, { cwd = '', grupos = [] } = {}) {
   const base = (baseUrl || '').replace(/\/+$/, '')
   if (!base || !model) return { code: 1, json: null, err: `${nombre}: falta la URL base o el modelo` }
   let reglas = ''
   try { reglas = readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8') } catch {}
+  const llamar = crearLlamada({ base, apiKey, model })
+  const mensajes = [{ role: 'system', content: reglas }, { role: 'user', content: prompt }]
+  const herramientas = cwd ? herramientasPara(grupos) : []
   try {
-    const r = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: reglas }, { role: 'user', content: prompt }] }),
-      signal: AbortSignal.timeout(10 * 60 * 1000),
-    })
-    const data = await r.json().catch(() => null)
-    const text = data?.choices?.[0]?.message?.content
-    if (!r.ok || !text) return { code: 1, json: null, err: `${nombre} (${model}): ${data?.error?.message || data?.message || 'HTTP ' + r.status}` }
-    return { code: 0, json: { result: text, total_cost_usd: 0, num_turns: 1, modelo: `${nombre}/${model}` }, err: '' }
+    const ejecutar = herramientas.length ? crearEjecutor({ cwd, permitidas: herramientas.map(h => h.function.name), resolverDns: (h) => dnsPromesas.lookup(h, { all: true }), log: (...a) => log(...a) }) : null
+    const { texto, pasos, llamadas, sinSoporte } = await responder({ llamar, mensajes, herramientas, ejecutar })
+    if (sinSoporte) log(`  ${nombre} (${model}) no acepta herramientas: respondió sin ellas`)
+    if (!texto) return { code: 1, json: null, err: `${nombre} (${model}): respuesta vacía` }
+    return { code: 0, json: { result: texto, total_cost_usd: 0, num_turns: pasos, herramientas: llamadas, modelo: `${nombre}/${model}` }, err: '' }
   } catch (e) {
     return { code: 1, json: null, err: `${nombre} (${model}): ${e.message}` }
   }
+}
+
+// Grupos de herramientas del agente y de la tarea (para ofrecerle al modelo por API las que puede usar)
+function gruposDe(agent, t) {
+  const p = perfilDe(agent)
+  return [...new Set([...lista(p.herramientas || ['web', 'archivos', 'skills']), ...permisosDeTarea(t, p._cat.herramientas || {})])]
 }
 
 // Ejecuta con el modelo del agente: Claude Code por defecto, otro modelo si así está configurado y la tarea lo permite
@@ -1361,7 +1373,7 @@ async function runModel(agent, prompt, cwd, opts, t) {
   if (principal === 'api') {
     const cfg = await apiConfigFor(agent)
     log(`  (modelo: ${cfg.nombre} / ${cfg.model})`)
-    return { ...(await runApi(cfg, prompt)), motor: 'api' }
+    return { ...(await runApi(cfg, prompt, { cwd, grupos: gruposDe(agent, t) })), motor: 'api' }
   }
   // Principal y después los de respaldo, solo si están conectados y sirven para la tarea
   if (motivo && cadena.includes('claude')) log(`  Claude queda de último recurso (${motivo})`)
