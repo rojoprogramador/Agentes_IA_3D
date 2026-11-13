@@ -6,6 +6,8 @@ import { toLines, fromLines } from '../agencia.js'
 import { LIMITES_PLAN } from '../../../motor/consumo.mjs'
 import MedidorClaude from '../components/MedidorClaude.jsx'
 import MemoriaEditor from '../components/MemoriaEditor.jsx'
+import CATALOGO from '../../../roles/catalogo.json'
+import { addDoc, collection } from 'firebase/firestore'
 
 // Configuración del motor desde el panel.
 // - Ajustes (config/motor): el motor los aplica al momento; lo que quede vacío sale de motor/negocio.json.
@@ -313,6 +315,7 @@ export default function AgenciaMotor() {
             <input type="checkbox" checked={form.aprConClaude} onChange={e => set('aprConClaude', e.target.checked)} />
             Si no hay otro motor, usar Claude (gasta de tu plan)
           </label>
+          <OptimizarRol />
         </div>
       </div>
 
@@ -459,6 +462,32 @@ function PermisosSiempre() {
             <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => quitar(tool)}>Quitar</button>
           </div>
         ))}
+    </div>
+  )
+}
+
+// C7: pedir que se revise ya el historial de un rol (normalmente se hace solo una vez al mes)
+function OptimizarRol() {
+  const { showToast, agents = [], user } = useApp()
+  const [rol, setRol] = useState('')
+  const [pedido, setPedido] = useState(null)
+  const roles = [...new Set(agents.map(a => a.rol).filter(r => r && CATALOGO.roles[r]))]
+  const pedir = async () => {
+    try {
+      const r = await addDoc(collection(db, 'optimizacionPedidos'), { rolId: rol, estado: 'pendiente', creadoPor: user.email, creadoAt: serverTimestamp() })
+      setPedido('pendiente')
+      onSnapshot(doc(db, 'optimizacionPedidos', r.id), s => { const d = s.data(); if (!d) return; setPedido(d.estado === 'listo' ? ({ propuesta: 'Listo: hay una propuesta en el Pipeline', sin_datos: 'Aún no hay suficientes tareas corregidas de este rol (mínimo 4)', sin_cambios: 'Revisado: no hay un patrón claro que corregir' }[d.resultado] || 'Listo') : d.estado === 'error' ? `Error: ${d.error}` : d.estado) })
+    } catch (e) { console.error(e); showToast('No se pudo pedir', 'error') }
+  }
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+      <span>Mejorar las instrucciones de un rol con su historial (también se hace solo cada mes):</span>
+      <select className="form-select" style={{ width: 'auto' }} value={rol} onChange={e => setRol(e.target.value)}>
+        <option value="">Elige un rol…</option>
+        {roles.map(r => <option key={r} value={r}>{CATALOGO.roles[r].nombre}</option>)}
+      </select>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={!rol || pedido === 'pendiente' || pedido === 'trabajando'} onClick={pedir}>Revisar ahora</button>
+      {pedido && <span style={{ color: 'var(--text-3)' }}>{pedido}</span>}
     </div>
   )
 }

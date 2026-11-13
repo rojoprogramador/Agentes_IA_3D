@@ -182,6 +182,10 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   en `agentStatus: 'esperando_hijas'` con `hijas` y `planCoordinador`; `eligible` lo retoma cuando `hijasListas`
   (agencia.mjs); `buildPrompt` agrega `seccionHijas` y al consolidar se usa `quitarBloques`. Las hijas no pasan por
   `encolarAprendizaje` ni muestran "guardar en memoria".
+- Optimización (C7): `motor/optimizacion.mjs` (puro con pruebas). `correrOptimizacion(rolId)` (worker): estadísticas del
+  rol → `correrRevisorAprendizaje` → `propuestas` tipo `rol` (`agregar`, `quitar`, `extrasAntes`). Mensual por rol
+  (`logs/optimizacion-estado.json`) o `optimizacionPedidos`. Al aprobar, el panel escribe `config/roles.<rol>.
+  instruccionesExtra` (`aplicarOptimizacion`) y `perfilDe` las suma a las del catálogo.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
