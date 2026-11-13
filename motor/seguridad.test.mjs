@@ -117,7 +117,7 @@ test('C5: las pruebas activas exigen autorización explícita, contacto, límite
   const nmap = argsDocker('puertos', 'ejemplo.com', { out: '/o', rps: 500 }).join(' ')
   assert.match(nmap, /--max-rate 100/); assert.match(nmap, /-sT .*--unprivileged/); assert.match(nmap, /--cap-drop ALL/)
   const nuc = argsDocker('vulnerabilidades_web', 'https://ejemplo.com', { out: '/o', cache: '/c', rps: 3 }).join(' ')
-  assert.match(nuc, /-rl 3/); assert.match(nuc, /-etags dos,fuzz,bruteforce,intrusive/)
+  assert.match(nuc, /-rl 3/); assert.match(nuc, / -as /); assert.match(nuc, /-etags dos,fuzz,bruteforce,intrusive/)
   assert.throws(() => argsDocker('vulnerabilidades_web', 'x', { out: '/o' }), /caché/)
   assert.match(argsDocker('web_activo', 'https://ejemplo.com', { out: '/o', rps: 4 }).join(' '), /zap-full-scan\.py.*scanner\.delayInMs=250/)
   const n = leerNmap('<port protocol="tcp" portid="443"><state state="open"/><service name="https" product="nginx"/></port><port protocol="tcp" portid="3306"><state state="open"/><service name="mysql" product="MySQL" version="8.0"/></port><port protocol="tcp" portid="25"><state state="closed"/></port>')
