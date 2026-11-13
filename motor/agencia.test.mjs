@@ -68,3 +68,19 @@ test('subtareas: quitar bloques y esperar a todas las hijas', async () => {
   assert.ok(!hijasListas(['a', 'e'], get), 'una con error bloquea')
   assert.ok(hijasListas(['a', 'borrada'], get), 'una borrada no bloquea')
 })
+
+test('salas por cliente: participantes y quién responde', async () => {
+  const { participantesSala, quienResponde } = await import('./agencia.mjs')
+  const ag = [
+    { id: 'copy', departamentoId: 'marketing' }, { id: 'web', departamentoId: 'desarrollo' },
+    { id: 'solo-otro', departamentoId: 'marketing', clientesPermitidos: ['otro'] }, { id: 'reserva', departamentoId: 'marketing', active: false },
+    { id: 'coord', departamentoId: 'operaciones', coordinador: true },
+  ]
+  const p = participantesSala(ag, { id: 'saor', departamentos: ['marketing'] }, { esCoordinador: a => !!a.coordinador })
+  assert.deepEqual(p.map(a => a.id), ['copy'])
+  assert.deepEqual(participantesSala(ag, { id: 'saor' }, { esCoordinador: a => !!a.coordinador }).map(a => a.id), ['copy', 'web'])
+  const todos = participantesSala(ag, { id: 'saor' }, { esCoordinador: a => !!a.coordinador })
+  assert.deepEqual(quienResponde([ag[1]], todos, ag[0]).map(a => a.id), ['web'])
+  assert.deepEqual(quienResponde([ag[2]], todos, ag[0]).map(a => a.id), ['copy'], 'un mencionado fuera de la sala no responde')
+  assert.deepEqual(quienResponde([], todos, null).map(a => a.id), ['copy'])
+})

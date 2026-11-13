@@ -34,7 +34,7 @@ import { AJUSTES_CURADOR, skillsUsadas, leerEstado as leerUsoSkills, guardarEsta
 import { AJUSTES_APRENDIZAJE, motivoRevision, promptAprendizaje, parsearPropuestas, skillMarkdown, rutaSkill } from './aprendizaje.mjs'
 import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
-import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro, quitarBloques, hijasListas as hijasListasPuro } from './agencia.mjs'
+import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro, quitarBloques, hijasListas as hijasListasPuro, participantesSala, quienResponde } from './agencia.mjs'
 import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, readdirSync, statSync, cpSync, copyFileSync } from 'node:fs'
 import { join, dirname, resolve, relative, isAbsolute, basename } from 'node:path'
@@ -1863,8 +1863,11 @@ function postToChat(chatId, from, text, taskId, agentId) {
   }).catch(e => log('Chat: no pude publicar:', e.code || e.message))
 }
 
+// C8: salas de clientes (chatId 'sala-<clienteId>') para los clientes con sala.activa
+const SALA = 'sala-'
 function watchChats() {
-  const wanted = new Set([GROUP, ...[...agents.values()].filter(a => a.active !== false).map(a => a.id)])
+  const salas = [...clientsById.values()].filter(c => c.activo !== false && c.sala?.activa === true).map(c => SALA + c.id)
+  const wanted = new Set([GROUP, ...salas, ...[...agents.values()].filter(a => a.active !== false).map(a => a.id)])
   for (const [id, un] of chatUnsubs) if (!wanted.has(id)) { un(); chatUnsubs.delete(id) }
   for (const id of wanted) {
     if (chatUnsubs.has(id)) continue
@@ -1890,7 +1893,7 @@ async function chatHistory(chatId, limitN = 16) {
     .map(m => `${m.from === 'humano' ? OWNER : (m.agentName || 'Agente')}: ${m.text}`).join('\n')
 }
 
-async function agentReply(agent, chatId, history, extra = '') {
+async function agentReply(agent, chatId, history, extra = '', { cliente = null, participantes = [], lider = null } = {}) {
   const questions = pendingQuestions().filter(q => isCoordinador(agent) || agents.get(tasks.get(q.id)?.asignado || waiting.get(q.id)?.asignado)?.id === agent.id)
   const own = [...tasks.values(), ...waiting.values()].filter(t => t.asignado === agent.id).slice(0, 10)
     .map(t => `- [${t.estado}] ${t.tarea} (tarea_id ${t.id})`)
@@ -1898,7 +1901,12 @@ async function agentReply(agent, chatId, history, extra = '') {
     `Eres ${agent.name}, agente de IA de ${negocio.nombre || 'este negocio'}. Tu área: ${agent.role || perfilDe(agent).nombre || 'general'}.`,
     agent.mission || perfilDe(agent).mision ? `Tu misión: ${agent.mission || perfilDe(agent).mision}` : '',
     businessContext(),
-    chatId === GROUP ? `Estás en el chat grupal del equipo de agentes con ${OWNER}. Responde solo a lo que te toca; si necesitas a otro agente, menciónalo con @Nombre y dile qué necesitas.` : `Estás chateando con ${OWNER} desde la Oficina.`,
+    cliente
+      ? [`Estás en la SALA del cliente ${cliente.nombre} con ${OWNER} y estos agentes: ${participantes.map(a => `${a.name} (${a.role || perfilDe(a).nombre || ''})`).join(', ')}.`,
+          lider?.id === agent.id ? `Eres el LÍDER de esta sala: si lo que se pregunta es de tu área, respóndelo; si es de otro agente de la sala, responde en una línea quién lo toma y menciónalo con @Nombre (él contestará).` : 'Responde solo lo que te toca; si necesitas a otro agente de la sala, menciónalo con @Nombre.',
+          `\n## Ficha del cliente\n${clientContext(cliente)}`,
+          'Solo hablas de este cliente. Si tienes buscar_historial, úsala para revisar trabajos anteriores de este cliente.'].join('\n')
+      : chatId === GROUP ? `Estás en el chat grupal del equipo de agentes con ${OWNER}. Responde solo a lo que te toca; si necesitas a otro agente, menciónalo con @Nombre y dile qué necesitas.` : `Estás chateando con ${OWNER} desde la Oficina.`,
     'Responde corto, claro y en texto plano (sin tablas). No inventes avances: si una tarea no está hecha, dilo.',
     isCoordinador(agent) ? teamContext() : agentsRoster(),
     own.length ? '\n## Tus tareas\n' + own.join('\n') : '',
@@ -1910,10 +1918,12 @@ async function agentReply(agent, chatId, history, extra = '') {
     `\n## Conversación reciente\n${history}`,
     `\nResponde ahora como ${agent.name}.`,
   ].filter(Boolean).join('\n')
-  const cwd = join(ROOT, 'trabajos', 'chat-' + (chatId === GROUP ? 'grupo' : agent.id))
+  const cwd = join(ROOT, 'trabajos', 'chat-' + (cliente ? `${chatId}-${agent.id}` : chatId === GROUP ? 'grupo' : agent.id))
   mkdirSync(cwd, { recursive: true })
-  // En el chat el agente tiene sus mismas herramientas que en las tareas (Magnific, editor, etc.)
-  const res = await runClaude(prompt, cwd, { tools: toolsFor(agent), agentName: deliveryName(agent), maxTurns: Math.max(15, perfilDe(agent).maxTurns || 0), agentId: agent.id })
+  // En el chat el agente tiene sus mismas herramientas que en las tareas (Magnific, editor, etc.). En una sala, además,
+  // el historial de ESE cliente (buscar_historial filtrado por AGENTES_CLIENTE).
+  const tools = cliente ? toolsFor(agent, { id: chatId, clienteId: cliente.id }) : toolsFor(agent)
+  const res = await runClaude(prompt, cwd, { tools, agentName: deliveryName(agent), maxTurns: Math.max(15, perfilDe(agent).maxTurns || 0), agentId: agent.id, ...(cliente ? { clienteId: cliente.id } : {}) })
   let text = (res.json?.result || '').trim()
   if (!text || res.json?.is_error) return 'No pude responder ahora mismo. Intenta de nuevo en un momento.'
   text = await applyAnswers(text)
@@ -1929,6 +1939,25 @@ async function handleChat(chatId, msg) {
   chatOcupado = 'Chat con ' + OWNER
   heartbeat()
   try {
+    if (chatId.startsWith(SALA)) {
+      const cliente = clientsById.get(chatId.slice(SALA.length))
+      if (!cliente) return
+      const participantes = participantesSala([...agents.values()], cliente, { departamentoDe: a => a.departamentoId || perfilDe(a).departamento, esCoordinador: isCoordinador })
+      const lider = agents.get(cliente.sala?.liderId) || null
+      const enSala = lider && !participantes.some(a => a.id === lider.id) ? [lider, ...participantes] : participantes
+      let speakers = quienResponde(mentioned(msg.text), enSala, lider)
+      for (let hop = 0; hop < 2 && speakers.length; hop++) {
+        const next = []
+        for (const a of speakers) {
+          const reply = await agentReply(a, chatId, await chatHistory(chatId), '', { cliente, participantes: enSala, lider })
+          await postToChat(chatId, 'agent', reply, null, a.id)
+          log(`💬 ${a.name} respondió en la sala de ${cliente.nombre}`)
+          for (const m of quienResponde(mentioned(reply), enSala, null)) if (m.id !== a.id && !next.includes(m) && mentioned(reply).some(x => x.id === m.id)) next.push(m)
+        }
+        speakers = next
+      }
+      return
+    }
     if (chatId !== GROUP) {
       const agent = agents.get(chatId)
       if (!agent) return
@@ -2153,6 +2182,7 @@ async function main() {
   escucharWhatsApp()
   escucharGeo()
   escucharOptimizacion()
+  setInterval(watchChats, 60_000) // C8: salas que se activan o desactivan en la ficha del cliente
   setInterval(() => revisarOptimizacion().catch(e => log('Optimización:', e.message)), 6 * 60 * 60_000)
   setInterval(() => revisarGeo().catch(e => log('GEO:', e.message)), 30 * 60_000)
   arranqueListo = true
