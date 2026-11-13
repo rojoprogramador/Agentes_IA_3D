@@ -102,6 +102,16 @@ export const EXAMPLE_TASK_TYPES = [
     revisor: null, formatoEntrega: 'archivos', herramientas: ['seguridad', 'salida'],
   },
   {
+    id: 'pentest_web', departamento: 'seguridad', rol: 'auditor_seguridad', nombre: 'Prueba de penetración web (PDF, requiere contrato)',
+    descripcion: 'Pruebas activas (puertos, nuclei, ZAP activo) SOLO con alcance firmado que las autorice, ventana y contacto de emergencia.',
+    plantillaBrief: [
+      { campo: 'objetivo', etiqueta: 'Dominio o URL (debe estar en el alcance)', tipo: 'texto', requerido: true },
+      { campo: 'tipos', etiqueta: 'Pruebas a correr (puertos, vulnerabilidades_web, web_activo)', tipo: 'texto', requerido: true },
+    ],
+    checklist: ['El alcance firmado autoriza pruebas activas y está vigente', 'Se corrió dentro de la ventana y con el límite de peticiones', 'Nada se explotó: solo se reporta', 'El informe tiene bloque de firma para el responsable humano'],
+    revisor: null, formatoEntrega: 'archivos', herramientas: ['seguridad', 'salida'],
+  },
+  {
     id: 'informe_analitica', departamento: 'operaciones', rol: 'analista', nombre: 'Informe mensual de analítica (PDF)',
     descripcion: 'Tráfico, conversiones y Google del mes pasado comparado con el anterior, con oportunidades y acciones. Prográmalo el día 3 de cada mes.',
     plantillaBrief: [

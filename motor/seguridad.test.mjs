@@ -104,3 +104,33 @@ test('candado: libre si no hay PID o si el proceso murió', () => {
   assert.ok(candadoLibre('123 2026-01-01', () => false))
   assert.ok(!candadoLibre('123 2026-01-01', () => true))
 })
+
+test('C5: las pruebas activas exigen autorización explícita, contacto, límite y ventana', async () => {
+  const { leerNmap, leerNuclei } = await import('./seguridad.mjs')
+  const activo = { ...A, pruebasActivas: true, contactoEmergencia: 'Ana 300 000 0000', limiteRps: 5 }
+  assert.match(alcanceVigente(A, 'puertos', JUEVES_NOCHE).motivo, /no autoriza pruebas ACTIVAS/)
+  assert.match(alcanceVigente({ ...activo, contactoEmergencia: '' }, 'puertos', JUEVES_NOCHE).motivo, /contacto de emergencia/)
+  assert.match(alcanceVigente({ ...activo, limiteRps: 0 }, 'vulnerabilidades_web', JUEVES_NOCHE).motivo, /peticiones por segundo/)
+  assert.match(alcanceVigente(activo, 'web_activo', JUEVES_TARDE).motivo, /fuera de la ventana/)
+  assert.equal(alcanceVigente(activo, 'puertos', JUEVES_NOCHE).ok, true)
+  assert.equal(alcanceVigente(activo, 'codigo', JUEVES_TARDE).ok, true, 'las pasivas siguen igual')
+  const nmap = argsDocker('puertos', 'ejemplo.com', { out: '/o', rps: 500 }).join(' ')
+  assert.match(nmap, /--max-rate 100/); assert.match(nmap, /-sT .*--unprivileged/); assert.match(nmap, /--cap-drop ALL/)
+  const nuc = argsDocker('vulnerabilidades_web', 'https://ejemplo.com', { out: '/o', cache: '/c', rps: 3 }).join(' ')
+  assert.match(nuc, /-rl 3/); assert.match(nuc, /-etags dos,fuzz,bruteforce,intrusive/)
+  assert.throws(() => argsDocker('vulnerabilidades_web', 'x', { out: '/o' }), /caché/)
+  assert.match(argsDocker('web_activo', 'https://ejemplo.com', { out: '/o', rps: 4 }).join(' '), /zap-full-scan\.py.*scanner\.delayInMs=250/)
+  const n = leerNmap('<port protocol="tcp" portid="443"><state state="open"/><service name="https" product="nginx"/></port><port protocol="tcp" portid="3306"><state state="open"/><service name="mysql" product="MySQL" version="8.0"/></port><port protocol="tcp" portid="25"><state state="closed"/></port>')
+  assert.deepEqual(n.hallazgos.map(h => [h.severidad, h.ubicacion]), [['alta', '3306/tcp'], ['info', '443/tcp']])
+  const u = leerNuclei('{"template-id":"CVE-2021-41773","info":{"name":"Apache path traversal","severity":"critical","tags":["cve","lfi"],"classification":{"cve-id":["CVE-2021-41773"]}},"matched-at":"https://e.com/cgi-bin/"}\nbasura\n')
+  assert.deepEqual([u.total, u.hallazgos[0].severidad, u.hallazgos[0].owasp], [1, 'critica', 'A03'])
+})
+
+test('C5: una herramienta que falla no se reporta como "sin hallazgos"', async () => {
+  const { fallaHerramienta, argsActualizarNuclei } = await import('./seguridad.mjs')
+  assert.match(fallaHerramienta('nuclei', 1, '[FTL] Could not run nuclei: no templates provided for scan'), /plantillas/)
+  assert.match(fallaHerramienta('nmap', 2, 'Failed to resolve'), /nmap terminó con error/)
+  assert.equal(fallaHerramienta('nuclei', 0, '[INF] Scan completed'), '')
+  assert.equal(fallaHerramienta('osv-scanner', 1, ''), '', 'osv sale con 1 cuando encuentra vulnerabilidades: no es falla')
+  assert.ok(argsActualizarNuclei({ cache: '/c' }).join(' ').includes('-ut -ud /cache/nuclei-templates'))
+})

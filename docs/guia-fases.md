@@ -176,3 +176,52 @@ Ficha → GEO: resumen por semana y por modelo, competidores más nombrados, cad
 **Verificado.** 4 pruebas nuevas; ciclo completo con dos modelos falsos por HTTP (uno cita la marca en 2.º lugar,
 otro no), confirmando que la pregunta no lleva el nombre del cliente. **Falta**: correrlo con modelos reales (necesita
 proveedores en Modelos de IA) y publicar las reglas.
+
+---
+
+## C5 · Pentest activo (solo con contrato)
+
+**Qué es.** Tres pruebas **activas** más en el servidor de seguridad de B6, para cuando el cliente firma una prueba de
+penetración: `puertos` (nmap), `vulnerabilidades_web` (plantillas de nuclei) y `web_activo` (escaneo activo de ZAP,
+que prueba inyecciones y XSS). Envían tráfico de prueba al sistema del cliente, así que tienen candados extra.
+
+**Candados (todos a la vez).**
+1. El alcance firmado tiene marcado **"autoriza pruebas ACTIVAS"** (ficha → Alcance; solo un admin).
+2. Hay **contacto de emergencia** (a quién llamar si algo se cae) y **límite de peticiones por segundo**.
+3. Vigencia ≤ 90 días y **ventana horaria** (como las pasivas en vivo).
+4. Cada `run_scan` pide **tu aprobación** (B4).
+5. El informe termina con un **bloque de firma** para el responsable humano: sin firma no es informe final.
+
+**Recorrido.**
+```
+run_scan(tipo activo, objetivo) → objetivo en alcance → vigencia → ¿pruebasActivas + contacto + límite? → ventana
+  → candado (uno a la vez) → contenedor endurecido con el límite de velocidad aplicado a la herramienta:
+     nmap  --max-rate <límite> -sT --unprivileged (sin privilegios de red)
+     nuclei -rl <límite> -etags dos,fuzz,bruteforce,intrusive (excluye lo peligroso)
+     ZAP    scanner.threadPerHost=1, scanner.delayInMs=1000/<límite>
+  → lectores: puertos abiertos (MySQL, Redis, RDP… expuestos = alta), hallazgos de nuclei con CVE, alertas de ZAP
+```
+
+**Por qué así.**
+- **Legal**: una prueba activa sin autorización escrita es acceso abusivo a un sistema informático (Ley 1273,
+  art. 269A). Por eso la casilla la marca un admin con el documento firmado, y el agente no puede cambiarla.
+- **Operativo**: el contacto de emergencia y el límite de velocidad evitan tumbar el sitio del cliente; las
+  plantillas de denegación de servicio, fuerza bruta y "intrusivas" están excluidas.
+- **Nunca explotar**: el agente reporta lo que encuentra; no lo usa para entrar.
+- **Firma humana**: un informe de seguridad tiene consecuencias (contratos, seguros, auditorías); lo firma una persona.
+
+**Conceptos.**
+- **Escaneo de puertos**: qué "puertas" de red están abiertas. Una base de datos (3306, 5432, 27017) o Redis (6379)
+  abiertos a internet son un riesgo alto.
+- **Escaneo TCP connect (`-sT`)**: abre la conexión completa como cualquier programa; no necesita privilegios de red
+  (no se le da `NET_RAW` al contenedor).
+- **nuclei**: miles de plantillas que comprueban vulnerabilidades conocidas (CVE) y malas configuraciones.
+- **DAST activo**: ZAP envía entradas maliciosas de prueba (inyección SQL, XSS) y observa las respuestas.
+
+**Verificado (contenedores reales).** 3 pruebas nuevas (requisitos de las activas, límite aplicado a cada herramienta,
+lectores de nmap y nuclei, "una herramienta que falla no es 'sin hallazgos'").
+- nmap contra `scanme.nmap.org` (servidor que el proyecto Nmap autoriza para pruebas): puertos 22 (OpenSSH 6.6.1),
+  80 (Apache 2.4.7) y 9929, en 212 s con el límite de 5/s; `example.com` (fuera del alcance) rechazado.
+- ZAP activo contra un nginx local propio: 9 hallazgos (falta CSP, anti-clickjacking, versión del servidor…) en 72 s.
+- La primera prueba de nuclei "terminó sin hallazgos" en 1 s porque no había descargado sus plantillas: ahora se
+  descargan a la caché la primera vez y, si una herramienta falla, se reporta como error, nunca como "todo bien".
