@@ -1,0 +1,30 @@
+# Motor en un servidor (fase C9). Guía: docs/vps.md
+#   1) cp motor/.env.example motor/.env  y llena el correo y la contraseña del robot (y lo demás desde el panel)
+#   2) docker compose up -d --build      3) docker compose logs -f motor
+services:
+  motor:
+    build: { context: ., dockerfile: motor/Dockerfile }
+    restart: unless-stopped
+    env_file: motor/.env
+    environment:
+      TZ: America/Bogota
+    volumes:
+      - ./motor/negocio.json:/app/motor/negocio.json:ro
+      - motor-logs:/app/motor/logs
+      - motor-trabajos:/app/motor/trabajos
+      - motor-entregas:/app/motor/entregas
+      - motor-skills:/app/motor/.claude
+      - motor-skills-clientes:/app/motor/skills-clientes
+      - motor-skills-archivo:/app/motor/skills-archivo
+      - claude-sesion:/home/node/.claude
+    # Chromium necesita memoria compartida para los PDF
+    shm_size: 1gb
+    # Sin puertos publicados: WhatsApp y las alertas entran por el túnel de Cloudflare (cloudflared va en la imagen)
+volumes:
+  motor-logs:
+  motor-trabajos:
+  motor-entregas:
+  motor-skills:
+  motor-skills-clientes:
+  motor-skills-archivo:
+  claude-sesion:
