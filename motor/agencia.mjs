@@ -58,3 +58,11 @@ export function parseReview(text) {
 export function permisosDeTarea(tipo, t, grupos = {}) {
   return [...new Set([...lista(tipo?.herramientas), ...lista(t?.permisosExtra)])].filter(g => Object.hasOwn(grupos, g))
 }
+
+// ---------- Subtareas (C6) ----------
+// Al consolidar, el coordinador no vuelve a delegar: se quitan los bloques de tareas y rutinas
+export const quitarBloques = (t) => String(t || '').replace(/```(tareas|programar)\s*[\s\S]*?```/g, '').trim()
+// ¿Ya entregaron todas? Una subtarea borrada no bloquea al padre; una con error sí (hay que resolverla)
+export function hijasListas(ids, obtener) {
+  return lista(ids).every(id => { const h = obtener(id); return !h || (['en_espera', 'completada'].includes(h.estado) && h.agentStatus !== 'error') })
+}
