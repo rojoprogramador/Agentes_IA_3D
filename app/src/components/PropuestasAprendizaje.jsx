@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
-import { collection, doc, getDoc, onSnapshot, query, updateDoc, where, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, getDoc, setDoc, onSnapshot, query, updateDoc, where, serverTimestamp } from 'firebase/firestore'
 import { agregarEntrada, revisarEntrada, LIMITES_MEMORIA } from '../../../motor/memoria.mjs'
+import { aplicarOptimizacion } from '../../../motor/optimizacion.mjs'
 
 // Aprendizaje propuesto (fase B2). Al aprobar una tarea con fricción, el motor le pide a un modelo que proponga
 // memoria (del cliente o del agente) o una skill. Nada se aplica solo: aquí el admin aprueba, edita o descarta.
@@ -42,7 +43,7 @@ export default function PropuestasAprendizaje() {
             Lo propone un modelo al revisar tareas con correcciones, rechazos u observaciones. Aprueba solo lo que
             sirva para tareas futuras; puedes editar el texto antes.
           </p>
-          {items.map(p => <Propuesta key={p.id} p={p} marcar={marcar} showToast={showToast} />)}
+          {items.map(p => p.tipo === 'rol' ? <PropuestaRol key={p.id} p={p} marcar={marcar} showToast={showToast} /> : <Propuesta key={p.id} p={p} marcar={marcar} showToast={showToast} />)}
         </div>
       )}
     </div>
@@ -118,6 +119,46 @@ function Propuesta({ p, marcar, showToast }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// C7: mejora de las instrucciones de un ROL a partir de su historial. Al aprobar se guarda en config/roles
+// (instrucciones extra que el motor suma a las del catálogo); se puede editar el texto antes.
+function PropuestaRol({ p, marcar, showToast }) {
+  const [texto, setTexto] = useState((p.agregar || []).join('\n'))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const aprobar = async () => {
+    const agregar = texto.split('\n').map(x => x.trim()).filter(Boolean)
+    const malo = agregar.map(revisarEntrada).find(Boolean) || (agregar.some(x => x.length > 300) ? 'Cada instrucción, menos de 300 caracteres' : '')
+    if (malo) { setError(malo); return }
+    setBusy(true)
+    try {
+      const ref = doc(db, 'config', 'roles')
+      const actual = (await getDoc(ref)).data()?.[p.destino.rolId]?.instruccionesExtra || []
+      const nuevas = aplicarOptimizacion(actual, { agregar, quitar: (p.quitar || []).filter(i => (p.extrasAntes || [])[i] === actual[i]) })
+      await setDoc(ref, { [p.destino.rolId]: { instruccionesExtra: nuevas, actualizadoAt: serverTimestamp() } }, { merge: true })
+      await marcar(p, 'aprobada', { textoFinal: agregar.join('\n') })
+      showToast(`Instrucciones de "${p.destino.nombre}" actualizadas`)
+    } catch (e) { console.error(e); setError(e.message || 'No se pudo guardar') }
+    setBusy(false)
+  }
+  return (
+    <div style={{ padding: 12, background: 'var(--bg-2)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+        <span style={{ fontWeight: 700 }}>Instrucciones del rol {p.destino?.nombre}</span>
+        <span style={{ color: 'var(--text-3)' }}>{p.motivo} · {p.motor}</span>
+      </div>
+      {p.estadisticas && <div style={{ fontSize: 12.5 }}>{p.estadisticas.total} tareas: {p.estadisticas.pctPrimera} % aprobadas a la primera, {p.estadisticas.corregida} corregidas, {p.estadisticas.rechazada} rechazadas.</div>}
+      {p.razon && <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{p.razon}</div>}
+      {(p.quitar || []).length > 0 && <div style={{ fontSize: 12.5 }}>Quitar: {(p.quitar || []).map(i => `“${(p.extrasAntes || [])[i] || i}”`).join(', ')}</div>}
+      <textarea className="form-textarea" rows={3} value={texto} onChange={e => { setTexto(e.target.value); setError('') }} placeholder="Una instrucción por línea" />
+      {error && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={aprobar}>Aprobar</button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => marcar(p, 'descartada')}>Descartar</button>
+      </div>
     </div>
   )
 }

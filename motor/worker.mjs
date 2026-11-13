@@ -21,6 +21,7 @@ import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
 import { codigoEmparejamiento, puedeResponderDesconocido, crearClienteWhatsApp, crearServidorWebhook } from './whatsapp.mjs'
+import { estadisticasRol, hayDatos, promptOptimizacion, parsearOptimizacion } from './optimizacion.mjs'
 import { configGeo, analizarRespuesta, resumenGeo, mensajesGeo, tocaGeo } from './geo.mjs'
 import { leerAlertaKuma, tokenValido, clienteDeAlerta, decidir as decidirAlerta, briefIncidente } from './alertas.mjs'
 import { crearTunel } from './tunel.mjs'
@@ -527,8 +528,12 @@ function perfilDe(agent) {
   const extra = loadNegocio().agentes?.[agent?.id] || {}
   const rolId = extra.rol || agent?.rol || 'personalizado'
   const rol = cat.roles[rolId] || cat.roles.personalizado || {}
-  return { id: rolId, ...rol, ...extra, _cat: cat }
+  // C7: instrucciones aprendidas del historial del rol y aprobadas por un admin (config/roles)
+  const aprendidas = lista(configRoles[rolId]?.instruccionesExtra)
+  const instrucciones = aprendidas.length ? [...lista(extra.instrucciones || rol.instrucciones), ...aprendidas] : (extra.instrucciones || rol.instrucciones)
+  return { id: rolId, ...rol, ...extra, ...(instrucciones ? { instrucciones } : {}), _cat: cat }
 }
+let configRoles = {} // config/roles: { rolId: { instruccionesExtra } }
 
 const isCoordinador = (agent) => !!perfilDe(agent).coordinador || agent?.kind === 'coordinador'
 const coordinadorAgent = () => [...agents.values()].find(a => isCoordinador(a) && a.active !== false)
@@ -2147,6 +2152,8 @@ async function main() {
   await reiniciarWhatsApp()
   escucharWhatsApp()
   escucharGeo()
+  escucharOptimizacion()
+  setInterval(() => revisarOptimizacion().catch(e => log('Optimización:', e.message)), 6 * 60 * 60_000)
   setInterval(() => revisarGeo().catch(e => log('GEO:', e.message)), 30 * 60_000)
   arranqueListo = true
 
@@ -2174,6 +2181,7 @@ function escucharPanel() {
   }, e => { log('Ajustes del panel sin acceso; uso negocio.json:', e.code || e.message); okConfig() })
   onSnapshot(doc(db, 'config', 'perfilDueno'), d => { perfilDueno = d.data() || {} }, () => {})
   onSnapshot(doc(db, 'config', 'curador'), d => { configCurador = d.data() || {}; heartbeat() }, () => {})
+  onSnapshot(doc(db, 'config', 'roles'), d => { configRoles = d.data() || {} }, () => {})
   let previo = null
   onSnapshot(collection(db, 'secretos'), snap => {
     secretosPanel.clear()
@@ -2336,6 +2344,60 @@ async function atenderWhatsApp(m, cliente) {
   if (c.clienteId) registrarWhatsAppEnHistorial(c, texto, m.id)
   telegram?.notify(`WhatsApp de ${c.nombre || '+' + m.de}${cl ? ` (${cl.nombre})` : ''}:\n\n${texto.slice(0, 1500)}\n\nResponde desde Agencia → WhatsApp.`)
   log(`WhatsApp: mensaje de ${c.nombre || m.de}${cl ? ` (${cl.nombre})` : ''} a la bandeja`)
+}
+
+// ---------- Optimización fuera de línea (C7) ----------
+// Del historial de un ROL (aprobadas a la primera / corregidas / rechazadas con las notas del dueño) un modelo sin
+// herramientas propone mejoras a sus instrucciones → propuestas tipo 'rol' → un admin aprueba → config/roles.
+// Mensual por rol con datos suficientes, o a pedido (optimizacionPedidos).
+const ARCHIVO_OPT = join(ROOT, 'logs', 'optimizacion-estado.json')
+let optimizando = false
+async function correrOptimizacion(rolId, motivo = 'mensual') {
+  const cat = loadCatalogo()
+  const rol = cat.roles?.[rolId]
+  if (!rol) throw new Error(`Rol desconocido: ${rolId}`)
+  const delRol = new Set([...agents.values()].filter(a => perfilDe(a).id === rolId).map(a => a.id))
+  const est = estadisticasRol([...tasks.values()].filter(t => delRol.has(t.asignado) && !t.tareaPadreId))
+  const marca = () => { const e = (() => { try { return JSON.parse(readFileSync(ARCHIVO_OPT, 'utf8')) } catch { return {} } })(); e[rolId] = Date.now(); writeFileSync(ARCHIVO_OPT, JSON.stringify(e)) }
+  if (!hayDatos(est)) { marca(); return { estado: 'sin_datos', estadisticas: est } }
+  const extras = lista(configRoles[rolId]?.instruccionesExtra)
+  const prompt = promptOptimizacion({ rol: rolId, nombre: rol.nombre || rolId, mision: rol.mision, instrucciones: lista(rol.instrucciones), extras, est })
+  const cwd = join(ROOT, 'trabajos', `optimizacion-${rolId}`)
+  mkdirSync(cwd, { recursive: true })
+  log(`🛠 Revisando el rol "${rol.nombre}" (${motivo}): ${est.total} tareas, ${est.pctPrimera} % a la primera`)
+  const r = await correrRevisorAprendizaje(prompt, cwd, { id: `opt-${rolId}`, tarea: `Optimizar ${rolId}` })
+  marca()
+  if (!r) throw new Error('Ningún motor disponible sin Claude (actívalo en Agencia → Motor → Aprendizaje si quieres usarlo)')
+  const p = parsearOptimizacion(r.json.result, extras)
+  if (!p.agregar.length && !p.quitar.length) { log(`  Rol "${rol.nombre}": sin cambios que proponer`); return { estado: 'sin_cambios', estadisticas: est } }
+  await addDoc(collection(db, 'propuestas'), {
+    tipo: 'rol', estado: 'pendiente', creadaAt: serverTimestamp(), motor: r.motor, motivo: 'mejora del rol', origenTaskId: '', tarea: `Rol ${rol.nombre}`,
+    destino: { rolId, nombre: rol.nombre || rolId }, agregar: p.agregar, quitar: p.quitar, extrasAntes: extras, razon: p.motivo,
+    estadisticas: { total: est.total, pctPrimera: est.pctPrimera, corregida: est.corregida, rechazada: est.rechazada },
+  })
+  telegram?.notify(`Propuesta para mejorar las instrucciones del rol "${rol.nombre}" (${est.pctPrimera} % de tareas aprobadas a la primera). Revísala en el Pipeline → Aprendizaje propuesto.`)
+  return { estado: 'propuesta', estadisticas: est }
+}
+async function revisarOptimizacion() {
+  if (optimizando || enCurso.size) return
+  const e = (() => { try { return JSON.parse(readFileSync(ARCHIVO_OPT, 'utf8')) } catch { return {} } })()
+  const roles = [...new Set([...agents.values()].filter(a => a.active !== false).map(a => perfilDe(a).id))]
+  const rolId = roles.find(r => Date.now() - (e[r] || 0) > 30 * 86400000)
+  if (!rolId) return
+  optimizando = true
+  try { await correrOptimizacion(rolId) } catch (err) { log(`Optimización ${rolId}:`, err.message) } finally { optimizando = false }
+}
+function escucharOptimizacion() {
+  const f = () => onSnapshot(query(collection(db, 'optimizacionPedidos'), where('estado', '==', 'pendiente')), snap => {
+    snap.forEach(async d => {
+      if (optimizando) return
+      optimizando = true
+      try { await updateDoc(d.ref, { estado: 'trabajando' }); const r = await correrOptimizacion(d.data().rolId, 'pedido desde el panel'); await updateDoc(d.ref, { estado: 'listo', resultado: r.estado }) }
+      catch (e) { await updateDoc(d.ref, { estado: 'error', error: String(e.message).slice(0, 300) }).catch(() => {}) }
+      finally { optimizando = false }
+    })
+  }, e => { log('Optimización: pedidos sin acceso (publica las reglas); reintento en 1 min:', e.code || e.message); setTimeout(f, 60_000) })
+  f()
 }
 
 // ---------- GEO (C4): ¿las IA recomiendan a la marca? ----------
