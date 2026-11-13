@@ -57,3 +57,14 @@ test('permisos de la tarea: suma tipo y tarea, sin repetir, y descarta lo que no
   assert.deepEqual(permisosDeTarea(null, { permisosExtra: ['Bash', 'Bash(rm -rf /)', 'constructor', '__proto__'] }, grupos), [])
   assert.deepEqual(permisosDeTarea(undefined, undefined, grupos), [])
 })
+
+test('subtareas: quitar bloques y esperar a todas las hijas', async () => {
+  const { quitarBloques, hijasListas } = await import('./agencia.mjs')
+  assert.equal(quitarBloques('Listo.\n```tareas\n[{"agente":"x"}]\n```\nFin ```programar\n[]\n```'), 'Listo.\n\nFin')
+  const t = { a: { estado: 'en_espera', agentStatus: 'done' }, b: { estado: 'en_progreso', agentStatus: 'running' }, c: { estado: 'completada' }, e: { estado: 'en_espera', agentStatus: 'error' } }
+  const get = (id) => t[id]
+  assert.ok(hijasListas(['a', 'c'], get))
+  assert.ok(!hijasListas(['a', 'b'], get))
+  assert.ok(!hijasListas(['a', 'e'], get), 'una con error bloquea')
+  assert.ok(hijasListas(['a', 'borrada'], get), 'una borrada no bloquea')
+})
