@@ -23,7 +23,7 @@ const TABS = [
 export default function ClientProfile({ client, departments, onClose, onRenamed, showToast, userEmail }) {
   const base = emptyClient(client?.nombre || '')
   const c = client || {}
-  const { providers = [] } = useApp() || {}
+  const { providers = [], agents = [] } = useApp() || {}
   const [tab, setTab] = useState('negocio')
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
@@ -73,6 +73,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     topeAds: c.ads?.topeMensual ? String(c.ads.topeMensual) : '',
     credGads: '', tokenMeta: '',
     listasEmail: (c.email?.listas || []).join(', '),
+    salaActiva: c.sala?.activa === true, salaLider: c.sala?.liderId || '',
     geoActivo: c.geo?.activo === true, geoMarca: c.geo?.marca || c.nombre || '', geoAlias: toLines(c.geo?.alias), geoDominio: c.geo?.dominio || c.activos?.web || '',
     geoCompetidores: toLines(c.geo?.competidores), geoPrompts: toLines(c.geo?.prompts), geoProveedores: c.geo?.proveedores || [],
   })
@@ -146,6 +147,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       analitica: { ga4PropertyId: ga4, gscSitio: gsc },
       ads: { googleAdsCustomerId: gadsCid, metaAdAccountId: metaCuenta, topeMensual: topeAds },
       geo: { activo: form.geoActivo, marca: form.geoMarca.trim(), alias: fromLines(form.geoAlias), dominio: form.geoDominio.trim(), competidores: fromLines(form.geoCompetidores).slice(0, 15), prompts: fromLines(form.geoPrompts).slice(0, 10), proveedores: form.geoProveedores.slice(0, 3) },
+      sala: { activa: form.salaActiva, liderId: form.salaLider },
       email: { listas: [...new Set(form.listasEmail.split(/[\s,]+/).map(Number).filter(n => Number.isInteger(n) && n > 0))] },
       updatedAt: serverTimestamp(), updatedBy: userEmail,
     }
@@ -245,6 +247,19 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
               {field('Palabras o frases prohibidas', 'palabrasNo', { area: true, hint: 'Una por línea.' })}
             </div>
           </>}
+
+          {tab === 'negocio' && (
+            <div style={{ padding: 10, background: 'var(--bg-2)', borderRadius: 8, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, marginTop: 8 }}>
+              <label><input type="checkbox" checked={form.salaActiva} onChange={e => set('salaActiva', e.target.checked)} /> Sala de chat de este cliente (Oficina)</label>
+              {form.salaActiva && (
+                <select className="form-select" style={{ width: 'auto' }} value={form.salaLider} onChange={e => set('salaLider', e.target.value)}>
+                  <option value="">Líder: el primer agente del cliente</option>
+                  {agents.filter(a => a.active !== false).map(a => <option key={a.id} value={a.id}>Líder: {a.name}</option>)}
+                </select>
+              )}
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Entran los agentes que atienden a este cliente; responde el líder o a quien él le pase la palabra.</span>
+            </div>
+          )}
 
           {tab === 'objetivos' && field('Objetivos de este trimestre', 'objetivos', { area: true, rows: 6, hint: 'Uno por línea. Los agentes orientan cada entrega a estos objetivos.' })}
 

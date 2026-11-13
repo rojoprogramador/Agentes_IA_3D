@@ -304,3 +304,37 @@ Cada 6 h el motor revisa: ¿algún rol activo sin revisar hace 30 días?   o   A
 
 **Verificado.** 4 pruebas nuevas (clasificación de resultados, prompt, validación de la propuesta, aplicación con
 tope). El ciclo con datos reales necesita tareas corregidas y las reglas publicadas.
+
+---
+
+## C8 · Salas por cliente
+
+**Qué es.** Un chat de grupo **por cliente** en la Oficina (selector "Salas de clientes…"), con solo los agentes que
+atienden a ese cliente. Responde el **agente líder** que elijas en la ficha; si la pregunta es de otro, el líder lo
+dice en una línea y lo menciona con @Nombre, y ese agente contesta. Tú también puedes mencionar a quien quieras.
+
+**Recorrido.**
+```
+Ficha del cliente → Negocio: "Sala de chat de este cliente" + líder
+Oficina → "Salas de clientes…" → mensaje en agentChats/sala-<clienteId>
+Motor (watchChats revisa cada minuto qué salas existen):
+  participantesSala(): agentes activos que atienden a ese cliente (clientesPermitidos) y de sus departamentos
+  quienResponde(): los @mencionados de la sala; si nadie, el líder
+  agentReply(…, { cliente, participantes, lider }) con la ficha del cliente y buscar_historial SOLO de ese cliente
+  → hasta 2 "pases de palabra" por mensaje
+```
+
+**Por qué así.**
+- **Aislamiento**: la sala solo tiene agentes de ese cliente y su historial filtrado por el motor
+  (`AGENTES_CLIENTE`), igual que en las tareas. Un agente mencionado que no atiende al cliente no responde.
+- **Un líder decide** en lugar de que hablen todos: menos ruido, menos consumo y una respuesta ordenada.
+- **Límite de saltos**: como en el chat de grupo, máximo 2 pases de palabra para que los agentes no se respondan sin
+  fin.
+
+**Conceptos.**
+- **Enrutamiento por un agente líder (router)**: un agente que entiende la petición y la dirige al especialista; es
+  como el recepcionista de la agencia.
+- **Contexto por sala**: cada conversación arrastra solo su propio historial y la ficha de su cliente.
+
+**Verificado.** 1 prueba nueva (participantes por cliente y departamento, mencionados fuera de la sala, líder por
+defecto); compila. La conversación real necesita el motor y las reglas publicadas.
