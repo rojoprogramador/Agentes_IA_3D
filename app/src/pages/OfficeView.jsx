@@ -300,12 +300,12 @@ export default function OfficeView() {
         {me && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {isAdmin && agents.length > 0 && (
-              <button className="btn btn-primary btn-sm" onClick={() => setChatWith('grupo')}>
+              <button className="btn btn-primary btn-sm" data-tour="chat-agentes" onClick={() => setChatWith('grupo')}>
                 <Icon name="users" size={14} /> Chat de agentes
               </button>
             )}
             {isAdmin && salas.length > 0 && (
-              <select className="form-select" style={{ width: 'auto', height: 32, fontSize: 13 }} value="" onChange={e => { const c = salas.find(x => x.id === e.target.value); if (c) setChatWith({ sala: c }) }}>
+              <select className="form-select" data-tour="salas" style={{ width: 'auto', height: 32, fontSize: 13 }} value="" onChange={e => { const c = salas.find(x => x.id === e.target.value); if (c) setChatWith({ sala: c }) }}>
                 <option value="">Salas de clientes…</option>
                 {salas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>

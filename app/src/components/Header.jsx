@@ -26,7 +26,7 @@ const SUPER_NAV = [
   { id: 'agencia', icon: 'columns',  label: 'Agencia' },
 ]
 
-export default function Header({ page, setPage, onLogout }) {
+export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
   const { userProfile, isAdmin, isSuperAdmin, theme, setTheme, openNewTask, user, tasks, openEditTask } = useApp()
   const [menuOpen, setMenuOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -86,7 +86,9 @@ export default function Header({ page, setPage, onLogout }) {
 
       {/* Acciones */}
       <div className="header-actions">
-        <button className="btn btn-primary btn-sm" onClick={openNewTask}>
+        <button className="icon-btn" data-tour="ayuda" title="Guía de esta pantalla (Mayús + clic: recorrido completo)"
+          onClick={(e) => onTour(e.shiftKey ? 'completo' : 'pagina')} style={{ fontWeight: 800, fontSize: 15 }}>?</button>
+        <button className="btn btn-primary btn-sm" data-tour="nueva-tarea" onClick={openNewTask}>
           <Icon name="plus" size={14} /> Nueva tarea
         </button>
 
@@ -94,6 +96,7 @@ export default function Header({ page, setPage, onLogout }) {
         <div className="dropdown-wrap">
           <button
             className="icon-btn"
+            data-tour="notificaciones"
             onClick={() => setNotifOpen(v => !v)}
             title="Notificaciones"
             style={{ position: 'relative' }}
