@@ -61,6 +61,9 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     ventanaDias: c.alcanceAutorizado?.ventana?.dias || [],
     ventanaDesde: c.alcanceAutorizado?.ventana?.desde || '',
     ventanaHasta: c.alcanceAutorizado?.ventana?.hasta || '',
+    pruebasActivas: c.alcanceAutorizado?.pruebasActivas === true,
+    contactoEmergencia: c.alcanceAutorizado?.contactoEmergencia || '',
+    limiteRps: c.alcanceAutorizado?.limiteRps ? String(c.alcanceAutorizado.limiteRps) : '',
     aprendizajes: c.aprendizajes || [],
     ga4PropertyId: c.analitica?.ga4PropertyId || '',
     gscSitio: c.analitica?.gscSitio || '',
@@ -109,6 +112,9 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       try { credGads = JSON.parse(form.credGads) } catch { showToast('La credencial de Google Ads no es un JSON válido', 'error'); return }
       if (!['developer_token', 'client_id', 'client_secret', 'refresh_token'].every(k => credGads[k])) { showToast('A la credencial de Google Ads le falta developer_token, client_id, client_secret o refresh_token', 'error'); return }
     }
+    if (form.pruebasActivas && (!form.contactoEmergencia.trim() || !(Number(form.limiteRps) > 0) || !form.ventanaDias.length)) {
+      showToast('Las pruebas activas necesitan contacto de emergencia, límite de peticiones por segundo y ventana horaria', 'error'); return
+    }
     if (form.vigenciaDesde && form.vigenciaHasta) {
       const dias = (Date.parse(form.vigenciaHasta) - Date.parse(form.vigenciaDesde)) / 86400000
       if (dias < 0 || dias > 90) { showToast('La vigencia del alcance debe ser de 0 a 90 días (para más, se firma otra autorización)', 'error'); return }
@@ -134,6 +140,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
         ips: fromLines(form.alcanceIps), subdominios: form.subdominios, cargo: form.cargoFirmante.trim(), documento: form.documento.trim(),
         vigenciaDesde: form.vigenciaDesde, vigenciaHasta: form.vigenciaHasta,
         ventana: { dias: form.ventanaDias, desde: form.ventanaDesde, hasta: form.ventanaHasta },
+        pruebasActivas: form.pruebasActivas, contactoEmergencia: form.contactoEmergencia.trim(), limiteRps: Number(form.limiteRps) || 0,
       },
       aprendizajes: form.aprendizajes,
       analitica: { ga4PropertyId: ga4, gscSitio: gsc },
@@ -375,6 +382,19 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
             <div className="form-row">
               {field('Documento firmado (link)', 'documento', { placeholder: 'https://drive.google.com/…' })}
               {field('Fecha de la firma', 'alcanceFecha', { type: 'date' })}
+            </div>
+            <div style={{ padding: 10, borderRadius: 8, border: '1px solid var(--danger)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, fontWeight: 600 }}>
+                <input type="checkbox" checked={form.pruebasActivas} onChange={e => set('pruebasActivas', e.target.checked)} />
+                El documento firmado autoriza pruebas ACTIVAS (puertos, nuclei, ZAP activo)
+              </label>
+              {form.pruebasActivas && (
+                <div className="form-row">
+                  {field('Contacto de emergencia (nombre y teléfono)', 'contactoEmergencia', { hint: 'A quién llamar si algo se cae durante la prueba.' })}
+                  {field('Máximo de peticiones por segundo', 'limiteRps', { type: 'number', placeholder: '5', hint: 'Lo que dice el contrato. Las herramientas no lo superan.' })}
+                </div>
+              )}
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Nunca se hace denegación de servicio, fuerza bruta, explotación ni ingeniería social.</span>
             </div>
             {field('Fuera de alcance y notas', 'alcanceNotas', { area: true, rows: 2 })}
           </>}

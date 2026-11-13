@@ -174,6 +174,10 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   del cliente). Worker `correrGeo` (proveedores de `clients.geo.proveedores`, respeta `permiteModelosGratis`),
   `revisarGeo` semanal (`logs/geo-estado.json`), `geoPedidos` para medir desde el panel. Resultados en
   `geoResultados/{clienteId}/items`. Panel: ficha → GEO (`GeoCliente.jsx`, importa `motor/geo.mjs`).
+- Pentest activo (C5): `TIPOS` con `activo: true` (`puertos` nmap, `vulnerabilidades_web` nuclei con caché de plantillas
+  en `logs/cache-nuclei`, `web_activo` zap-full-scan). `alcanceVigente` exige `pruebasActivas`, `contactoEmergencia`,
+  `limiteRps` y ventana; `argsDocker(..., { rps })` aplica el límite; lectores `leerNmap` (XML) y `leerNuclei` (JSONL).
+  Tipo de tarea `pentest_web`; el informe lleva bloque de firma humana.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

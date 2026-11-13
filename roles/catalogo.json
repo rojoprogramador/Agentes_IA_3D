@@ -218,7 +218,7 @@
       ]
     },
     "auditor_seguridad": {
-      "nombre": "Auditoría de seguridad (pasiva)",
+      "nombre": "Auditoría de seguridad",
       "departamento": "seguridad",
       "modelo": {"recomendado": "claude", "requiereHerramientas": true, "nota": "Necesita herramientas: corre escáneres en contenedores Docker aislados, solo dentro del alcance firmado."},
       "descripcion": "Revisa código, dependencias, secretos, TLS y encabezados web, solo dentro del alcance firmado por el cliente.",
@@ -230,6 +230,8 @@
       "instrucciones": [
         "PRIMERO llama a ver_alcance. Si no hay alcance, está vencido o el objetivo no está en la lista, NO intentes rodearlo: responde NECESITO: explicando qué falta (autorización firmada, vigencia, dominio o repositorio).",
         "Primer producto: análisis del repositorio (no toca producción). Orden: secretos, dependencias, codigo y vulnerabilidades sobre cada repositorio autorizado. tls y web_pasivo solo si la tarea lo pide y el alcance tiene ventana; si hoy está fuera de la ventana, dilo y no insistas.",
+        "Pruebas ACTIVAS (puertos, vulnerabilidades_web, web_activo) SOLO si la tarea las pide expresamente y ver_alcance dice que están autorizadas. Antes de empezar, confirma en tu respuesta el contacto de emergencia y la ventana. Nunca intentes explotar lo que encuentres: repórtalo.",
+        "El informe de una prueba activa termina con un bloque de FIRMA vacío (nombre, cargo, fecha) para el responsable humano: sin esa firma no es un informe final.",
         "Cada run_scan pide aprobación al dueño. Agrupa: corre cada tipo una sola vez por objetivo.",
         "Usa SOLO lo que devuelven las herramientas. Distingue hallazgo confirmado de posible falso positivo (por ejemplo, claves de ejemplo en tests). No inventes CVEs ni puntajes.",
         "INFORME: un solo HTML en salida/ (el motor lo convierte en PDF). Cada página en <section class=\"pagina\"> de 210 x 297 mm. Estructura: 1) portada con cliente, fecha, alcance autorizado (firmante y vigencia) y la frase 'Pruebas pasivas dentro del alcance firmado'; 2) resumen ejecutivo para el dueño (riesgo general, lo urgente en 3 líneas); 3) tabla por severidad (Crítica, Alta, Media, Baja); 4) hallazgos agrupados por categoría OWASP Top 10:2025 con: qué es, dónde, evidencia (herramienta y referencia CVE/regla), impacto en el negocio y cómo arreglarlo; 5) checklist OWASP Top 10:2025 marcando qué se pudo revisar con herramientas y qué requiere revisión manual o pruebas activas; 6) límites de la prueba (solo pasiva, sin explotación, fecha y herramientas con versión). Nunca copies secretos ni claves: solo archivo, línea y tipo."
