@@ -356,6 +356,11 @@ en Google, oportunidades (búsquedas casi en primera página) y acciones.
 El motor entrega la credencial y la propiedad **solo** en tareas de ese cliente: el agente no puede pedir datos de
 otra propiedad.
 
+### Guía dentro de la app
+
+El botón **?** de la cabecera explica la pantalla en la que estás, iluminando cada parte (con **Mayús + clic**, el
+recorrido completo). La primera vez que alguien entra, el recorrido aparece solo.
+
 ### Motor en un servidor (Docker)
 
 Para que el motor trabaje 24/7 sin tu PC: `docker compose up -d --build` en un VPS (2 vCPU, 4 GB). Con Claude **Pro** no

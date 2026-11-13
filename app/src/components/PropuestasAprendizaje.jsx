@@ -32,7 +32,7 @@ export default function PropuestasAprendizaje() {
   })
 
   return (
-    <div className="card" style={{ marginBottom: 16, borderLeft: '3px solid var(--purple)' }}>
+    <div className="card" data-tour="aprendizaje" style={{ marginBottom: 16, borderLeft: '3px solid var(--purple)' }}>
       <button type="button" className="btn btn-ghost" style={{ width: '100%', justifyContent: 'space-between', display: 'flex' }} onClick={() => setAbierto(!abierto)}>
         <span style={{ fontWeight: 700 }}>🧠 Aprendizaje propuesto {pendientes ? `· ${pendientes} por revisar` : ''}</span>
         <span>{abierto ? '▲' : '▼'}</span>
