@@ -117,13 +117,15 @@ test('C5: las pruebas activas exigen autorización explícita, contacto, límite
   const nmap = argsDocker('puertos', 'ejemplo.com', { out: '/o', rps: 500 }).join(' ')
   assert.match(nmap, /--max-rate 100/); assert.match(nmap, /-sT .*--unprivileged/); assert.match(nmap, /--cap-drop ALL/)
   const nuc = argsDocker('vulnerabilidades_web', 'https://ejemplo.com', { out: '/o', cache: '/c', rps: 3 }).join(' ')
-  assert.match(nuc, /-rl 3/); assert.match(nuc, / -as /); assert.match(nuc, /-etags dos,fuzz,bruteforce,intrusive/)
+  assert.match(nuc, /-rl 3/); assert.match(nuc, /-tags exposure,misconfig/); assert.match(nuc, /-etags dos,fuzz,bruteforce,intrusive/)
   assert.throws(() => argsDocker('vulnerabilidades_web', 'x', { out: '/o' }), /caché/)
   assert.match(argsDocker('web_activo', 'https://ejemplo.com', { out: '/o', rps: 4 }).join(' '), /zap-full-scan\.py.*scanner\.delayInMs=250/)
   const n = leerNmap('<port protocol="tcp" portid="443"><state state="open"/><service name="https" product="nginx"/></port><port protocol="tcp" portid="3306"><state state="open"/><service name="mysql" product="MySQL" version="8.0"/></port><port protocol="tcp" portid="25"><state state="closed"/></port>')
   assert.deepEqual(n.hallazgos.map(h => [h.severidad, h.ubicacion]), [['alta', '3306/tcp'], ['info', '443/tcp']])
   const u = leerNuclei('{"template-id":"CVE-2021-41773","info":{"name":"Apache path traversal","severity":"critical","tags":["cve","lfi"],"classification":{"cve-id":["CVE-2021-41773"]}},"matched-at":"https://e.com/cgi-bin/"}\nbasura\n')
-  assert.deepEqual([u.total, u.hallazgos[0].severidad, u.hallazgos[0].owasp], [1, 'critica', 'A03'])
+  assert.deepEqual([u.total, u.hallazgos[0].severidad, u.hallazgos[0].owasp], [1, 'critica', 'A05'])
+  assert.equal(leerNuclei('{"template-id":"git-config","info":{"name":"Git Config","severity":"medium","tags":["config","git","exposure","vuln"]}}').hallazgos[0].owasp, 'A02')
+  assert.equal(leerNuclei('{"template-id":"CVE-x","info":{"name":"x","severity":"high","tags":["cve","apache"]}}').hallazgos[0].owasp, 'A03')
 })
 
 test('C5: una herramienta que falla no se reporta como "sin hallazgos"', async () => {

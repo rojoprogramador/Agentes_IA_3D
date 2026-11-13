@@ -151,8 +151,10 @@ export function argsDocker(tipo, objetivo, { src = '', out, uid = 1000, gid = 10
     case 'testssl': return [...base, img, '--jsonfile', '/out/testssl.json', '--quiet', '--color', '0', '--warnings', 'off', '--sneaky', `${objetivo}:443`]
     case 'nmap': return [...base, img, '-sT', '-Pn', '--top-ports', '1000', '-sV', '--version-light', '-T3', '--max-rate', String(Math.max(1, Math.min(100, Math.floor(rps)))), '--unprivileged', '-oX', '/out/nmap.xml', objetivo]
     case 'nuclei': if (!cache) throw new Error('nuclei necesita una carpeta de caché para sus plantillas')
-      // -as: detecta la tecnología del sitio y corre solo las plantillas que aplican (todas tardarían horas con el límite)
-      return [...base, '-v', `${cache}:/cache:rw`, img, '-u', objetivo, '-ud', '/cache/nuclei-templates', '-as', '-timeout', '8', '-retries', '0', '-jsonl', '-o', '/out/nuclei.jsonl',
+      // Plantillas de exposición y mala configuración (.git, respaldos, logs, paneles, archivos de configuración): las
+      // que más encuentran en sitios de negocios. Todas las plantillas tardarían horas con el límite de velocidad, y
+      // "-as" (por tecnología) solo devuelve datos informativos (probado: no detectó un .git expuesto; con estas sí).
+      return [...base, '-v', `${cache}:/cache:rw`, img, '-u', objetivo, '-ud', '/cache/nuclei-templates', '-tags', 'exposure,misconfig,config,git,backup,logs,panel,debug,files', '-timeout', '8', '-retries', '0', '-jsonl', '-o', '/out/nuclei.jsonl',
         '-rl', String(Math.max(1, Math.min(50, Math.floor(rps)))), '-c', '5', '-severity', 'low,medium,high,critical', '-etags', 'dos,fuzz,bruteforce,intrusive', '-silent', '-disable-update-check', '-nc']
     case 'zap-full': return [...base, '-w', '/zap/wrk', '--tmpfs', '/home/zap:rw,size=512m,mode=1777', '-v', `${out}:/zap/wrk:rw`, img, 'zap-full-scan.py', '-t', objetivo, '-J', 'zap.json', '-m', '3', '-I',
       '-z', `-config scanner.threadPerHost=1 -config scanner.delayInMs=${Math.ceil(1000 / Math.max(1, rps))}`]
@@ -307,10 +309,19 @@ export function leerNmap(xml) {
   return cerrar('nmap', out)
 }
 
+// Exposición y mala configuración primero (un .git expuesto es configuración, aunque la plantilla diga "vuln")
+function owaspNuclei(tags) {
+  const t = (Array.isArray(tags) ? tags : String(tags || '').split(',')).join(',').toLowerCase()
+  if (/xss|sqli|injection|ssti|rce|lfi|traversal/.test(t)) return 'A05'
+  if (/exposure|misconfig|config|backup|logs|debug|panel|git/.test(t)) return 'A02'
+  if (/cve|outdated|vuln/.test(t)) return 'A03'
+  return 'A02'
+}
+
 export function leerNuclei(texto) {
   const filas = String(texto || '').split('\n').map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
   return cerrar('nuclei', filas.map(f => ({
-    severidad: SEV(f.info?.severity), owasp: /cve|vuln|outdated/i.test((f.info?.tags || []).join(',')) ? 'A03' : /xss|sqli|injection|ssti|rce/i.test((f.info?.tags || []).join(',')) ? 'A05' : 'A02',
+    severidad: SEV(f.info?.severity), owasp: owaspNuclei(f.info?.tags),
     titulo: corta(f.info?.name || f['template-id'], 140), ubicacion: corta(f['matched-at'] || f.host, 160),
     detalle: corta(f.info?.remediation || f.info?.description || '', 220), referencia: [f['template-id'], ...(f.info?.classification?.['cve-id'] || [])].filter(Boolean).slice(0, 3).join(', '),
   })))
