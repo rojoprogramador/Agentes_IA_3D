@@ -17,7 +17,7 @@ import PendingApproval from './pages/PendingApproval.jsx'
 import Header from './components/Header.jsx'
 import PomodoroWidget from './components/PomodoroWidget.jsx'
 import ActivityWatchdog from './components/ActivityWatchdog.jsx'
-import Tutorial from './components/Tutorial.jsx'
+import TourGuiado from './components/TourGuiado.jsx'
 import AprobacionesPendientes from './components/AprobacionesPendientes.jsx'
 import TaskForm from './components/TaskForm.jsx'
 import { logOnline } from './utils/worklog.js'
@@ -57,7 +57,8 @@ export default function App() {
   const [page, setPage] = useState(null) // null hasta conocer el rol
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
   const [toast, setToast] = useState(null)
-  const [showTutorial, setShowTutorial] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false) // primer ingreso: recorrido completo
+  const [tour, setTour] = useState(null)                   // 'pagina' | 'completo' (botón de ayuda)
   const [taskFormOpen, setTaskFormOpen] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [viewAsEmployee, setViewAsEmployee] = useState(false) // admin viendo como empleado
@@ -331,7 +332,7 @@ export default function App() {
           </div>
         )}
 
-        <Header page={page} setPage={setPage} onLogout={handleLogout} />
+        <Header page={page} setPage={setPage} onLogout={handleLogout} onTour={setTour} />
         <div className="app-body">
           <main className="app-main">
             <AprobacionesPendientes />
@@ -368,12 +369,13 @@ export default function App() {
           </div>
         )}
 
-        {showTutorial && (
-          <Tutorial
-            isAdmin={isAdmin}
+        {(showTutorial || tour) && (
+          <TourGuiado
+            key={tour || 'inicio'}
+            modo={tour || 'completo'} page={page} setPage={setPage} isAdmin={isAdmin}
             onClose={() => {
               localStorage.setItem(`tutorial_${user.uid}`, '1')
-              setShowTutorial(false)
+              setShowTutorial(false); setTour(null)
             }}
           />
         )}

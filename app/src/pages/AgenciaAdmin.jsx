@@ -59,14 +59,14 @@ export default function AgenciaAdmin() {
       </div>
 
       <div className="tab-row" style={{ marginBottom: 18 }}>
-        <button className={`btn btn-sm ${tab === 'tareas' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('tareas')}>Tareas</button>
-        <button className={`btn btn-sm ${tab === 'programadas' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('programadas')}>Programadas</button>
+        <button data-tour="agencia-tareas" className={`btn btn-sm ${tab === 'tareas' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('tareas')}>Tareas</button>
+        <button data-tour="agencia-programadas" className={`btn btn-sm ${tab === 'programadas' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('programadas')}>Programadas</button>
         <button className={`btn btn-sm ${tab === 'departamentos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('departamentos')}>Departamentos</button>
         <button className={`btn btn-sm ${tab === 'tipos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('tipos')}>Tipos de tarea</button>
-        <button className={`btn btn-sm ${tab === 'modelos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('modelos')}>Modelos de IA</button>
-        <button className={`btn btn-sm ${tab === 'skills' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('skills')}>Skills</button>
-        <button className={`btn btn-sm ${tab === 'whatsapp' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('whatsapp')}>WhatsApp</button>
-        <button className={`btn btn-sm ${tab === 'motor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('motor')}>Motor</button>
+        <button data-tour="agencia-modelos" className={`btn btn-sm ${tab === 'modelos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('modelos')}>Modelos de IA</button>
+        <button data-tour="agencia-skills" className={`btn btn-sm ${tab === 'skills' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('skills')}>Skills</button>
+        <button data-tour="agencia-whatsapp" className={`btn btn-sm ${tab === 'whatsapp' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('whatsapp')}>WhatsApp</button>
+        <button data-tour="agencia-motor" className={`btn btn-sm ${tab === 'motor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('motor')}>Motor</button>
       </div>
 
       {tab === 'tareas' && <AgenciaTareas />}

@@ -225,6 +225,9 @@ lectores de nmap y nuclei, "una herramienta que falla no es 'sin hallazgos'").
 - ZAP activo contra un nginx local propio: 9 hallazgos (falta CSP, anti-clickjacking, versión del servidor…) en 72 s.
 - La primera prueba de nuclei "terminó sin hallazgos" en 1 s porque no había descargado sus plantillas: ahora se
   descargan a la caché la primera vez y, si una herramienta falla, se reporta como error, nunca como "todo bien".
+- nuclei contra el mismo nginx con una carpeta `.git` expuesta: la detecta (media, A02) en 216 s. Con todas las
+  plantillas no terminaba en 20 min y con el modo automático (`-as`) no la encontraba; por eso usa las etiquetas de
+  exposición y mala configuración.
 
 ---
 
@@ -338,3 +341,60 @@ Motor (watchChats revisa cada minuto qué salas existen):
 
 **Verificado.** 1 prueba nueva (participantes por cliente y departamento, mencionados fuera de la sala, líder por
 defecto); compila. La conversación real necesita el motor y las reglas publicadas.
+
+---
+
+## C9 · El motor fuera del PC (Docker y VPS)
+
+**Qué es.** Una imagen de Docker del motor y un `docker-compose.yml` para correrlo 24/7 en un servidor, con la guía
+`docs/vps.md`. El panel sigue en Firebase; solo se muda el programa que corre los agentes.
+
+**Cómo está armada la imagen** (`motor/Dockerfile`).
+```
+node:24 (Debian slim)
+  + chromium y fuentes (PDF, vista previa, auditorías)  + git (skills, repos)  + cloudflared (túnel)  + tini
+  npm install --omit=dev  (Claude Code, Codex y Gemini CLI vienen como dependencias de npm)
+  usuario "node" (sin root) · datos en volúmenes: logs, trabajos, entregas, skills, sesión de Claude
+docker compose up -d --build  → reinicio automático, TZ de Colombia, 1 GB de memoria compartida para Chromium
+```
+
+**Por qué así.**
+- **El plan de Claude manda**: con **Pro** no conviene una cola desatendida 24/7 (límites de uso personal); en un
+  servidor se usa **Max** (`claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`) o **clave de API**.
+- **Sin puertos abiertos**: WhatsApp y las alertas entran por el túnel de Cloudflare, que sale del servidor.
+- **Volúmenes**: el contenedor se puede borrar y reconstruir (actualizaciones) sin perder historial ni skills.
+- **Sin acceso a Docker dentro del contenedor**: los escaneos de seguridad (B6/C5) necesitarían el socket de Docker,
+  que equivale a darle control total del servidor; la guía explica cómo correr el motor sin contenedor si los
+  necesitas.
+- **tini**: reenvía la señal de apagado para que el motor cierre ordenado (y apague túneles y procesos hijos).
+
+**Conceptos.**
+- **Imagen y contenedor**: la imagen es la "receta" ya horneada; el contenedor, una copia en ejecución.
+- **Volumen**: carpeta que vive fuera del contenedor y sobrevive a sus reinicios y reconstrucciones.
+- **Capas de Docker**: se instala `package.json` antes de copiar el código, así cambiar el código no reinstala todo.
+
+---
+
+## D · Tour guiado dentro de la app
+
+**Qué es.** Un recorrido que **ilumina** cada parte de la pantalla y explica para qué sirve. El botón **?** de la
+cabecera explica la pantalla actual (Mayús + clic: el recorrido completo). En el primer ingreso aparece el recorrido
+completo por todas las pantallas (reemplaza al tutorial viejo, que hablaba de timers y Pomodoro).
+
+**Cómo funciona.**
+```
+app/src/tour.js        → TOURS: pasos por pantalla { sel (elemento), titulo, texto, admin }
+                         pasosDe(modo, página, esAdmin): filtra los de admin y arma el recorrido
+TourGuiado.jsx          → cambia de pantalla si hace falta, busca el elemento (reintenta mientras carga),
+                         lo centra, lo ilumina (sombra enorme alrededor) y pone la tarjeta donde quepa
+data-tour="…"           → marcas en la cabecera, la Oficina, el Pipeline y las pestañas de Agencia
+```
+
+**Por qué así.**
+- **El contenido separado del componente**: para cambiar o agregar una explicación solo se edita `tour.js`.
+- **Por rol**: un empleado ve 12 pasos de sus pantallas; un administrador, 27 (incluye Agencia, Clientes y Agentes).
+- **Tolerante**: si el elemento no está (por ejemplo no hay propuestas pendientes), el paso se muestra al centro.
+- **Teclado**: flechas para avanzar y retroceder, Esc para cerrar.
+
+**Verificado.** Prueba de los pasos (27 admin / 12 empleado, filtrado por página) y capturas reales en Chromium de una
+página de prueba: la tarjeta legible, centrada sin elemento y abajo cuando el elemento ocupa la pantalla; sin errores.

@@ -192,6 +192,9 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
 - Docker (C9): `motor/Dockerfile` (node:24 slim + chromium + git + cloudflared + tini, usuario `node`), `.dockerignore`,
   `docker-compose.yml` (volúmenes de logs, trabajos, entregas, skills y sesión de Claude; sin puertos). Guía `docs/vps.md`.
   Los escaneos de seguridad no corren dentro del contenedor (no se monta el socket de Docker).
+- Tour guiado (D): contenido en `app/src/tour.js` (`TOURS` por página, `pasosDe`), componente `TourGuiado.jsx` (ilumina
+  `[data-tour="…"]`, cambia de página en el recorrido completo). Botón "?" en `Header.jsx` (Mayús: recorrido completo);
+  primer ingreso: recorrido completo (`tutorial_<uid>` en localStorage). Para agregar un paso: `data-tour` + entrada en `TOURS`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
