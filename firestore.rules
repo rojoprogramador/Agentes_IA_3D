@@ -112,6 +112,17 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Cuentas de redes (vidIQ): el admin pide listar o conectar y solo el motor responde (enlace de autorización)
+    match /redesOps/{opId} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if isAdmin() && request.resource.data.estado == 'pendiente'
+        && request.resource.data.tipo in ['listar', 'conectar']
+        && request.resource.data.get('platform', '') in ['', 'YOUTUBE', 'TIKTOK', 'FACEBOOK_PAGES', 'INSTAGRAM']
+        && !('url' in request.resource.data);
+      allow update: if isAgentBot();
+      allow delete: if isAdmin();
+    }
+
     // Aprendizaje propuesto (B2): el motor propone (memoria o skill) y solo un admin decide.
     // El robot solo crea en 'pendiente' y solo marca 'instalada'/'error' una skill que el admin ya aprobó.
     match /propuestas/{id} {
@@ -191,7 +202,7 @@ service cloud.firestore {
     match /config/{docId} {
       allow read: if isAuth();
       // permisosAcciones: el motor agrega una herramienta cuando el dueño pulsa "Siempre" en Telegram (B4)
-      allow write: if isAdmin() || (isAgentBot() && docId in ['agentWorker', 'permisosAcciones']);
+      allow write: if isAdmin() || (isAgentBot() && docId in ['agentWorker', 'permisosAcciones', 'redesSociales']);
     }
 
     // Agencia: fichas de clientes, departamentos y tipos de tarea.
