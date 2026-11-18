@@ -27,3 +27,4 @@ motor/.agents/
 Thumbs.db
 *.log
 motor/.skills-cuarentena/
+motor/skills-clientes/

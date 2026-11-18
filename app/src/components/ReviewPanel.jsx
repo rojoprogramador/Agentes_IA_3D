@@ -13,7 +13,7 @@ export default function ReviewPanel({ task, onDone }) {
   const [verIdx, setVerIdx] = useState(versiones.length ? versiones.length - 1 : -1)
   const [mode, setMode] = useState(null) // 'corregir' | 'rechazar'
   const [nota, setNota] = useState('')
-  const [guardarAprendizaje, setGuardarAprendizaje] = useState(true)
+  const [guardarAprendizaje, setGuardarAprendizaje] = useState(false)
   const [leccionAgente, setLeccionAgente] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -190,9 +190,12 @@ export default function ReviewPanel({ task, onDone }) {
           {cliente && (
             <label style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center' }}>
               <input type="checkbox" checked={guardarAprendizaje} onChange={e => setGuardarAprendizaje(e.target.checked)} />
-              Guardar como aprendizaje de {cliente.nombre} (desmarca si es solo para esta tarea)
+              Guardar tal cual en la memoria de {cliente.nombre}
             </label>
           )}
+          <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+            No hace falta marcar nada: al aprobar la tarea, el motor propone qué aprender de esta corrección (en el Pipeline → Aprendizaje propuesto).
+          </span>
           {agente && (
             <label style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center' }}>
               <input type="checkbox" checked={leccionAgente} onChange={e => setLeccionAgente(e.target.checked)} />

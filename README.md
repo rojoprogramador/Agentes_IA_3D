@@ -202,6 +202,11 @@ Las pantallas **Agentes**, **Clientes** y **Agencia** solo las ve el Super Admin
   preguntas y respuestas) queda en `motor/logs/historial.db`. En cada tarea el agente tiene la herramienta
   `buscar_historial` para consultar lo que ya se hizo **con ese mismo cliente** (nunca con otros). Las claves se
   borran antes de guardar. Al encender, el motor agrega las tareas que ya existen.
+- **Aprendizaje propuesto**: al aprobar una tarea que tuvo correcciones, rechazo u observaciones del revisor, un modelo
+  sin herramientas (por defecto Antigravity, Codex, Gemini o un modelo por API, **no** Claude) propone qué guardar en
+  la memoria del cliente o del agente, o una skill nueva. Aparece arriba del Pipeline; nada se aplica sin que lo
+  apruebes. Las skills de un cliente quedan en `motor/skills-clientes/<cliente>/` y solo se copian a sus tareas.
+  Se configura en Agencia → Motor.
 - **Clientes**: la ficha de cada cliente (negocio, marca, objetivos, activos, alcance, aprendizajes y departamentos
   contratados). Un agente solo recibe la ficha del cliente de su tarea; nunca ve la de otros clientes.
 - **Agencia → Tareas**: todas las tareas agrupadas por departamento, con filtro por cliente. Es la misma lista que

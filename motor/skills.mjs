@@ -225,6 +225,7 @@ export function crearSkills({ ROOT, log, fuentesExtra = () => [] }) {
   async function actualizar(nombre) {
     const o = leerOrigen().find(x => x.nombre === nombre)
     if (!o) throw new Error('Esta skill no tiene origen registrado (se instaló a mano): reinstálala desde el buscador')
+    if (o.repo === 'local') throw new Error('Es una skill aprendida (sin repo): se cambia con una nueva propuesta de aprendizaje')
     const remoto = (await git(['ls-remote', `https://github.com/${o.repo}.git`, 'HEAD'], ROOT, 60_000)).split(/\s/)[0] || ''
     if (remoto && remoto.startsWith(o.commit)) return { alDia: true, nombre, commit: o.commit }
     const rev = await revisar({ source: o.repo, skillId: o.skillId || nombre, ruta: o.ruta })
@@ -241,5 +242,12 @@ export function crearSkills({ ROOT, log, fuentesExtra = () => [] }) {
     return { nombre }
   }
 
-  return { buscar, revisar, instalar, actualizar, desinstalar, leerOrigen, esConfiable, fuentes: () => [...fuentes()] }
+  // Skills aprendidas (B2): el motor las escribe tras la aprobación de un admin. Origen "local", sin repo ni commit.
+  function registrarLocal(nombre, { propuestaId = '', tareaId = '' } = {}) {
+    const lista = leerOrigen().filter(o => o.nombre !== nombre)
+    lista.push({ nombre, repo: 'local', propuestaId, tareaId, instalada: new Date().toISOString().slice(0, 10) })
+    guardarOrigen(lista)
+  }
+
+  return { buscar, revisar, instalar, actualizar, desinstalar, leerOrigen, registrarLocal, esConfiable, fuentes: () => [...fuentes()] }
 }
