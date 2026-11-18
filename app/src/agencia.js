@@ -120,6 +120,17 @@ export const EXAMPLE_TASK_TYPES = [
     checklist: ['Todas las cifras vienen de las cuentas con su periodo', 'Cada propuesta trae evidencia y efecto esperado', 'Dice si el gasto va a pasar del tope', 'Aclara que no se cambió nada'],
     revisor: 'revisor_calidad', formatoEntrega: 'archivos', herramientas: ['ads', 'salida'],
   },
+  {
+    id: 'secuencia_email', departamento: 'marketing', rol: 'email_marketing', nombre: 'Secuencia de correos',
+    descripcion: 'Bienvenida, nutrición o reactivación. Queda en borrador en Listmonk para que la envíes tú.',
+    plantillaBrief: [
+      { campo: 'objetivo', etiqueta: 'Objetivo de la secuencia', tipo: 'texto', requerido: true },
+      { campo: 'correos', etiqueta: 'Cuántos correos', tipo: 'numero', requerido: false },
+      { campo: 'lista', etiqueta: 'A quién va (lista o segmento)', tipo: 'texto', requerido: false },
+    ],
+    checklist: ['Un llamado a la acción por correo', 'Enlace de baja en cada correo', 'Asuntos de menos de 50 caracteres', 'Nada se envió: quedó en borrador'],
+    revisor: 'revisor_calidad', formatoEntrega: 'texto', herramientas: ['email'],
+  },
 ]
 
 export const FIELD_TYPES = [
@@ -146,6 +157,7 @@ export const emptyClient = (nombre = '') => ({
   activos: { web: '', redes: '', repos: [], driveFolderId: '', bibliotecaPath: '' },
   analitica: { ga4PropertyId: '', gscSitio: '' },
   ads: { googleAdsCustomerId: '', metaAdAccountId: '', topeMensual: 0 },
+  email: { listas: [] },
   alcanceAutorizado: { dominios: [], repos: [], ips: [], subdominios: false, notas: '', autorizadoPor: '', cargo: '', fecha: '', documento: '', vigenciaDesde: '', vigenciaHasta: '', ventana: { dias: [], desde: '', hasta: '' } },
   departamentos: [],
   aprendizajes: [],
@@ -191,6 +203,7 @@ export const PERMISOS = [
   { id: 'editor_video', label: 'Editar video (servidor de medios)' },
   { id: 'magnific_imagenes', label: 'Generar imágenes con Magnific (de pago)' },
   { id: 'auditoria', label: 'Auditar sitios web (PageSpeed, rastreo, accesibilidad, schema)', ayuda: 'Solo sitios públicos; no modifica nada' },
+  { id: 'email', label: 'Crear borradores en Listmonk (no envía)', ayuda: 'Solo en las listas del cliente; el envío lo das tú' },
   { id: 'ads', label: 'Leer Google Ads y Meta Ads del cliente', ayuda: 'Solo lectura: audita y propone, no cambia campañas' },
   { id: 'analitica', label: 'Leer GA4 y Search Console del cliente', ayuda: 'Solo lectura y solo del cliente de la tarea' },
   { id: 'seguridad', label: 'Escaneos de seguridad pasivos (Docker)', ayuda: 'Solo dentro del alcance firmado del cliente; cada escaneo pide tu aprobación' },

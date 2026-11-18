@@ -312,6 +312,12 @@ limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-regist
 al abrir una sesión nueva: cierra la terminal (o `wsl --shutdown` desde Windows) antes de encender el motor. La
 primera vez cada herramienta descarga su imagen y Trivy su base (~130 MB, queda en `motor/logs/cache-trivy`).
 
+### Email marketing (Listmonk)
+
+El rol **Email marketing** (tipo *Secuencia de correos*) redacta secuencias y, con **Listmonk** conectado (Agencia →
+Motor: URL; Claves: usuario de API), las deja como **borradores**; el envío lo das tú en Listmonk. Cada cliente solo
+usa las listas que le asignes (ficha → Email). Para CRM (HubSpot, Twenty) conecta su servidor MCP y agrégalo al agente.
+
 ### Paid media (Google Ads y Meta Ads)
 
 El rol **Paid media** (tipo *Auditoría de anuncios*) lee las campañas del cliente en **solo lectura** y entrega un PDF

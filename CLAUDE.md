@@ -163,6 +163,9 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   que se inyecta por cliente (B6, B7, C1): `secretos/cliente_<id>_googleads|metaads` o `GOOGLE_ADS_CRED`/`META_ADS_TOKEN`,
   `clients.ads {googleAdsCustomerId, metaAdAccountId, topeMensual}`. Rol `paid_media`, grupo `ads`, tipo `auditoria_ads`.
   Explicación de cada fase C/D: `docs/guia-fases.md`.
+- Email (C2): `motor/email.mjs` + `motor/email-server.mjs` (MCP `agentes-email`: email_listas, email_campanas,
+  email_crear_borrador; sin envío). `config/motor.email.listmonkUrl`, secreto `LISTMONK_API`, `clients.email.listas`.
+  Rol `email_marketing`, grupo `email`, tipo `secuencia_email`. CRM: MCP de HubSpot/Twenty vía `herramientasExtra`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

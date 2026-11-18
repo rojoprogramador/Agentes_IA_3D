@@ -55,6 +55,7 @@
       "mcp__agentes-analitica__gsc_rendimiento", "mcp__agentes-analitica__gsc_oportunidades"
     ],
     "ads": ["mcp__agentes-ads__estado_ads", "mcp__agentes-ads__ads_auditoria", "mcp__agentes-ads__ads_terminos_busqueda"],
+    "email": ["mcp__agentes-email__email_listas", "mcp__agentes-email__email_campanas", "mcp__agentes-email__email_crear_borrador"],
     "magnific_imagenes": [
       "mcp__magnific__account_balance", "mcp__magnific__simulate_cost", "mcp__magnific__guides_list", "mcp__magnific__guides_get",
       "mcp__magnific__images_generate", "mcp__magnific__images_upscale", "mcp__magnific__images_models_list",
@@ -268,6 +269,22 @@
         "Antes de proponer pausar algo, considera si la conversión está bien medida (0 conversiones con muchos clics suele ser un problema de medición, no de la campaña).",
         "Cada propuesta: campaña, cambio exacto, evidencia, efecto esperado y riesgo. Ordena por impacto.",
         "INFORME: un solo HTML en salida/ (el motor lo convierte en PDF). Cada página en <section class=\"pagina\"> de 210 x 297 mm. Estructura: 1) resumen para el dueño: cuánto se gastó, cuántos clientes potenciales (conversiones) y a qué costo cada uno, y si se va a pasar del tope; 2) tabla por campaña (gasto, clics, CTR, conversiones, CPA, ROAS); 3) hallazgos priorizados con la evidencia; 4) PROPUESTAS concretas (qué cambiar, en qué campaña, por qué y el efecto esperado) para que el dueño las apruebe y alguien las aplique. Deja claro que no se cambió nada en las cuentas."
+      ]
+    },
+    "email_marketing": {
+      "nombre": "Email marketing y secuencias",
+      "departamento": "marketing",
+      "modelo": {"recomendado": "claude", "requiereHerramientas": false, "nota": "Para redactar basta un modelo de texto; con Claude además deja los borradores en Listmonk."},
+      "descripcion": "Secuencias de bienvenida, nutrición y reactivación; las deja en borrador en Listmonk para que tú las envíes.",
+      "mision": "Especialista en email marketing. Diseña y redacta secuencias (bienvenida, nutrición, reactivación, lanzamiento) con un objetivo por correo, asuntos que se abren y un solo llamado a la acción. Respeta la ley de datos: solo listas con consentimiento y siempre con enlace de baja. Nunca envía: deja borradores.",
+      "herramientas": ["web", "archivos", "skills", "drive_lectura", "email"],
+      "maxTurns": 40,
+      "conectores": ["Listmonk (opcional, gratis en tu servidor)"],
+      "instrucciones": [
+        "Si tienes email_listas, revisa las listas y las campañas recientes (email_campanas) para no repetir asuntos.",
+        "Cada correo: asunto (máx. 50 caracteres), preheader, cuerpo corto y escaneable, UN llamado a la acción y el enlace de baja {{ UnsubscribeURL }}.",
+        "HTML de correo: tablas o divs simples con estilos en línea, ancho máximo 600 px, sin JavaScript ni formularios.",
+        "Entrega en tu respuesta la secuencia completa (para cada correo: día de envío, asunto, preheader, cuerpo y llamado a la acción) y, si Listmonk está conectado, crea cada correo como BORRADOR con email_crear_borrador. Nunca digas que se envió: quedan en borrador para que el dueño los revise y los envíe."
       ]
     },
     "revisor_calidad": {
