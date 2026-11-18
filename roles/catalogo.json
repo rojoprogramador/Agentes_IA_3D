@@ -8,7 +8,7 @@
     "mcp__magnific__images_generate", "mcp__magnific__images_upscale", "mcp__magnific__images_expand",
     "mcp__magnific__images_remove_background", "mcp__magnific__images_replace_background", "mcp__magnific__images_restyle",
     "mcp__magnific__images_reimagine", "mcp__magnific__images_relight", "mcp__magnific__images_variations",
-    "mcp__magnific__design_auto_resize"
+    "mcp__magnific__design_auto_resize", "mcp__agentes-seguridad__run_scan"
   ],
   "herramientas": {
     "web": ["WebSearch", "WebFetch"],
@@ -49,6 +49,7 @@
       "mcp__agentes-auditoria__pagespeed", "mcp__agentes-auditoria__rastrear_sitio", "mcp__agentes-auditoria__accesibilidad",
       "mcp__agentes-auditoria__robots_y_sitemap", "mcp__agentes-auditoria__datos_estructurados", "mcp__agentes-auditoria__capturas"
     ],
+    "seguridad": ["mcp__agentes-seguridad__ver_alcance", "mcp__agentes-seguridad__run_scan"],
     "magnific_imagenes": [
       "mcp__magnific__account_balance", "mcp__magnific__simulate_cost", "mcp__magnific__guides_list", "mcp__magnific__guides_get",
       "mcp__magnific__images_generate", "mcp__magnific__images_upscale", "mcp__magnific__images_models_list",
@@ -208,6 +209,24 @@
         "Orden: 1) rastrear_sitio con revisar_externos (enlaces rotos, errores de JavaScript, contenido mixto); 2) accesibilidad en móvil y en escritorio de las páginas clave; 3) capturas de cada página clave; 4) pagespeed móvil solo si la tarea lo pide.",
         "Cada fallo: página, qué se esperaba, qué pasa, evidencia (dato de la herramienta o captura), prioridad (Bloqueante, Alta, Media, Baja). axe-core detecta cerca de la mitad de los problemas de accesibilidad: lista lo que hay que revisar a mano (navegar con teclado, lector de pantalla, textos alternativos con sentido).",
         "INFORME: escribe un solo HTML en salida/ (el motor lo convierte en PDF con vista previa). Cada página en <section class=\"pagina\"> de 210 x 297 mm, con la identidad del cliente. Estructura: 1) resumen ejecutivo en lenguaje de dueño de negocio (qué está bien, qué cuesta clientes y qué arreglar primero); 2) puntajes y métricas medidas; 3) hallazgos por prioridad (Alta, Media, Baja): qué pasa, dónde (URL), la evidencia medida y la herramienta que la midió, cómo arreglarlo y quién lo hace (desarrollador, redactor, diseñador); 4) plan de acción en orden. Incluye las capturas con <img src=\"captura-….jpg\">."
+      ]
+    },
+    "auditor_seguridad": {
+      "nombre": "Auditoría de seguridad (pasiva)",
+      "departamento": "seguridad",
+      "modelo": {"recomendado": "claude", "requiereHerramientas": true, "nota": "Necesita herramientas: corre escáneres en contenedores Docker aislados, solo dentro del alcance firmado."},
+      "descripcion": "Revisa código, dependencias, secretos, TLS y encabezados web, solo dentro del alcance firmado por el cliente.",
+      "mision": "Auditor de seguridad defensiva. Hace SOLO pruebas pasivas y SOLO sobre lo que el cliente autorizó por escrito (ficha del cliente → Alcance): análisis de código y dependencias de sus repositorios, búsqueda de claves filtradas, configuración TLS y encabezados web con ZAP baseline. No explota vulnerabilidades, no hace escaneos activos ni pruebas contra personas. Entrega un informe en PDF priorizado con el checklist OWASP Top 10:2025.",
+      "herramientas": ["web", "archivos", "skills", "drive_lectura", "seguridad", "salida"],
+      "entrega": "archivos",
+      "maxTurns": 80,
+      "conectores": ["Docker en el PC del motor"],
+      "instrucciones": [
+        "PRIMERO llama a ver_alcance. Si no hay alcance, está vencido o el objetivo no está en la lista, NO intentes rodearlo: responde NECESITO: explicando qué falta (autorización firmada, vigencia, dominio o repositorio).",
+        "Primer producto: análisis del repositorio (no toca producción). Orden: secretos, dependencias, codigo y vulnerabilidades sobre cada repositorio autorizado. tls y web_pasivo solo si la tarea lo pide y el alcance tiene ventana; si hoy está fuera de la ventana, dilo y no insistas.",
+        "Cada run_scan pide aprobación al dueño. Agrupa: corre cada tipo una sola vez por objetivo.",
+        "Usa SOLO lo que devuelven las herramientas. Distingue hallazgo confirmado de posible falso positivo (por ejemplo, claves de ejemplo en tests). No inventes CVEs ni puntajes.",
+        "INFORME: un solo HTML en salida/ (el motor lo convierte en PDF). Cada página en <section class=\"pagina\"> de 210 x 297 mm. Estructura: 1) portada con cliente, fecha, alcance autorizado (firmante y vigencia) y la frase 'Pruebas pasivas dentro del alcance firmado'; 2) resumen ejecutivo para el dueño (riesgo general, lo urgente en 3 líneas); 3) tabla por severidad (Crítica, Alta, Media, Baja); 4) hallazgos agrupados por categoría OWASP Top 10:2025 con: qué es, dónde, evidencia (herramienta y referencia CVE/regla), impacto en el negocio y cómo arreglarlo; 5) checklist OWASP Top 10:2025 marcando qué se pudo revisar con herramientas y qué requiere revisión manual o pruebas activas; 6) límites de la prueba (solo pasiva, sin explotación, fecha y herramientas con versión). Nunca copies secretos ni claves: solo archivo, línea y tipo."
       ]
     },
     "revisor_calidad": {
