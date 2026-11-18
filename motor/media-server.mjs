@@ -1,7 +1,7 @@
 // Agentes Media: herramientas locales para los agentes (servidor MCP por stdio).
 // - Clint: transcribir videos, cortar silencios, subtitular, recortar, unir, pasar a vertical.
 // - Wanda y Clint: guardar imágenes y videos crudos (JPG, PNG, MP4) en su carpeta de entregas.
-// Todo corre en el PC con ffmpeg y Whisper; no se sube nada a servicios externos.
+// Todo corre en el PC con ffmpeg y Whisper. Única salida externa: subir_video_vidiq (solo videos aprobados, solo a vidIQ).
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -9,7 +9,10 @@ import { z } from 'zod'
 import ffmpegPath from 'ffmpeg-static'
 import ffprobeStatic from 'ffprobe-static'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, rmSync, copyFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { nombreIntermedio, nombreFinal, formatoPorTamano, validarVideo, pareceTexto, primerosBytes, idDeDrive, EXT_VIDEO } from './video.mjs'
+import { rutaPublicable, urlDeSubida, subirReanudable } from './publicacion.mjs'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dns from 'node:dns'
@@ -46,11 +49,36 @@ function outPath(agente, nombre, ext) {
   return p
 }
 
+// Video por tarea (lo pone el motor: AGENTES_TAREA): entregas/<agente>/<tarea>/trabajo/ = pasos intermedios (nunca se
+// entregan; se reutilizan en las correcciones; el motor los borra al aprobar) y .../final/ = solo lo de entregar_video.
+const carpetaTarea = () => safe(process.env.AGENTES_TAREA || '') || 'sin-tarea'
+function trabajoDir(agente) { const d = join(agentDir(agente), carpetaTarea(), 'trabajo'); mkdirSync(d, { recursive: true }); return d }
+function finalDir(agente) { const d = join(agentDir(agente), carpetaTarea(), 'final'); mkdirSync(d, { recursive: true }); return d }
+// Paso intermedio: ruta fija en trabajo/ (paso + entrada + parámetros). Si ya existe y es válido, se reutiliza.
+async function intermedio(agente, paso, entrada, params = {}, ext = '.mp4') {
+  const dest = join(trabajoDir(agente), nombreIntermedio(paso, entrada, params, ext))
+  const reuso = existsSync(dest) && (!EXT_VIDEO.includes(ext) || (await validarVideo(dest, ffprobeStatic.path)).ok)
+  return { dest, reuso }
+}
+// Si el paso falla, no queda un archivo a medias en trabajo/
+async function generar(dest, fn) {
+  try { await fn() } catch (e) { rmSync(dest, { force: true }); throw e }
+  return dest
+}
+const reusado = (dest) => `${dest}\n(reutilizado: ya estaba hecho con esta misma entrada y estos parámetros)`
+// Archivos auxiliares de ffmpeg (filtros, .ass, .srt temporales): en trabajo/ y se borran al terminar
+async function conAuxiliar(agente, nombre, contenido, fn) {
+  const dir = trabajoDir(agente)
+  const aux = `.aux-${process.pid}-${Date.now()}-${nombre}`
+  writeFileSync(join(dir, aux), contenido)
+  try { return await fn(aux, dir) } finally { rmSync(join(dir, aux), { force: true }) }
+}
+
 // Busca un archivo: ruta absoluta, nombre dentro de la carpeta Entrada del agente, o en toda la carpeta de entregas
 function findInput(archivo, agente) {
   if (!archivo) throw new Error('Falta el archivo')
   if (isAbsolute(archivo) && existsSync(archivo)) return archivo
-  const candidates = [join(agentDir(agente), 'Entrada', archivo), join(agentDir(agente), archivo), resolve(baseDir(), archivo)]
+  const candidates = [join(agentDir(agente), 'Entrada', archivo), join(trabajoDir(agente), archivo), join(agentDir(agente), archivo), resolve(baseDir(), archivo)]
   for (const c of candidates) if (existsSync(c)) return c
   const target = archivo.toLowerCase()
   const walk = (dir, depth = 0) => {
@@ -68,20 +96,34 @@ function findInput(archivo, agente) {
   throw new Error(`No encontré "${archivo}". Pídele al dueño que lo deje en la carpeta Entrada de tu carpeta, o usa una URL.`)
 }
 
+const MSG_DRIVE = 'Los archivos de Google Drive los descarga el motor al empezar la tarea (con la cuenta de Drive de la agencia) y quedan en tu carpeta Entrada: usa ese nombre de archivo (mira carpeta_entregas). Si no está, responde NECESITO: pidiendo que compartan el archivo con la cuenta de Drive de la agencia.'
+
+// Descarga validada: una página web (login de Google, error) nunca se guarda como si fuera el archivo
 async function download(url, dest) {
+  if (idDeDrive(url)) throw new Error(MSG_DRIVE)
   const r = await fetch(url, { signal: AbortSignal.timeout(10 * 60 * 1000) })
   if (!r.ok) throw new Error(`No pude descargar (${r.status})`)
+  const tipo = r.headers.get('content-type') || ''
+  if (/text\/html|application\/json/i.test(tipo)) throw new Error(`La URL devolvió una página web (${tipo.split(';')[0]}), no el archivo. Puede pedir inicio de sesión.`)
   writeFileSync(dest, Buffer.from(await r.arrayBuffer()))
+  try {
+    if (pareceTexto(primerosBytes(dest))) throw new Error('La URL devolvió una página web, no el archivo. Puede pedir inicio de sesión.')
+    if (EXT_VIDEO.includes(extname(dest).toLowerCase())) {
+      const v = await validarVideo(dest, ffprobeStatic.path)
+      if (!v.ok) throw new Error(`Lo descargado no es un video válido: ${v.motivo}`)
+    }
+  } catch (e) { rmSync(dest, { force: true }); throw e }
   return dest
 }
 
-// Acepta URL o archivo; las URL se descargan a una carpeta temporal del agente
+// Acepta URL o archivo. Las URL se descargan una vez a trabajo/ (se reutilizan); las de Drive las baja el motor.
 async function resolveInput(archivo, agente) {
   if (/^https?:\/\//i.test(archivo)) {
-    const tmp = join(ROOT, 'trabajos', '_descargas')
-    mkdirSync(tmp, { recursive: true })
-    const ext = extname(new URL(archivo).pathname) || '.mp4'
-    return download(archivo, join(tmp, `${Date.now()}${ext}`))
+    if (idDeDrive(archivo)) throw new Error(MSG_DRIVE)
+    const ext = extname(new URL(archivo).pathname).toLowerCase() || '.mp4'
+    const dest = join(trabajoDir(agente), `descarga-${createHash('sha1').update(archivo).digest('hex').slice(0, 10)}${ext}`)
+    if (existsSync(dest)) return dest
+    return download(archivo, dest)
   }
   return findInput(archivo, agente)
 }
@@ -179,14 +221,12 @@ function keepRanges(total, remove) {
   return keep
 }
 
-async function renderKeep(f, keep, dest) {
+async function renderKeep(f, keep, dest, agente) {
   const parts = keep.map(([a, b], i) =>
     `[0:v]trim=start=${a.toFixed(3)}:end=${b.toFixed(3)},setpts=PTS-STARTPTS[v${i}];[0:a]atrim=start=${a.toFixed(3)}:end=${b.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`)
   const concat = keep.map((_, i) => `[v${i}][a${i}]`).join('') + `concat=n=${keep.length}:v=1:a=1[v][a]`
-  const filterFile = join(ROOT, 'trabajos', '_descargas', `cortes-${Date.now()}.txt`)
-  mkdirSync(dirname(filterFile), { recursive: true })
-  writeFileSync(filterFile, parts.join(';') + ';' + concat)
-  await ffmpeg(['-i', f, '-filter_complex_script', filterFile, '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', dest])
+  await conAuxiliar(agente, 'cortes.txt', parts.join(';') + ';' + concat, (aux, dir) =>
+    ffmpeg(['-i', f, '-filter_complex_script', join(dir, aux), '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', '-b:a', '160k', dest]))
 }
 
 const ok = (text) => ({ content: [{ type: 'text', text }] })
@@ -204,8 +244,13 @@ server.tool('carpeta_entregas',
       const dir = agentDir(agente)
       const entrada = join(dir, 'Entrada')
       mkdirSync(entrada, { recursive: true })
-      const files = readdirSync(entrada)
-      return ok(`Entregas: ${dir}\nEntrada: ${entrada}\nArchivos en Entrada: ${files.length ? files.join(', ') : '(vacía)'}\nGoogle Drive local: ${config().driveLocal && existsSync(config().driveLocal) ? 'sí' : 'no (se guarda en el PC)'}`)
+      const files = readdirSync(entrada).filter(x => !x.startsWith('.'))
+      const lista = (d) => { try { return readdirSync(d).filter(x => !x.startsWith('.')) } catch { return [] } }
+      const trabajo = process.env.AGENTES_TAREA ? lista(join(dir, carpetaTarea(), 'trabajo')) : []
+      const finales = process.env.AGENTES_TAREA ? lista(join(dir, carpetaTarea(), 'final')) : []
+      return ok(`Entregas: ${dir}\nEntrada: ${entrada}\nArchivos en Entrada: ${files.length ? files.join(', ') : '(vacía)'}` +
+        (process.env.AGENTES_TAREA ? `\nIntermedios de esta tarea (trabajo/, no se entregan): ${trabajo.length ? trabajo.join(', ') : '(ninguno)'}\nFinales entregados con entregar_video: ${finales.length ? finales.join(', ') : '(ninguno)'}` : '') +
+        `\nGoogle Drive local: ${config().driveLocal && existsSync(config().driveLocal) ? 'sí' : 'no (se guarda en el PC)'}`)
     } catch (e) { return fail(e) }
   })
 
@@ -219,11 +264,9 @@ server.tool('guardar_imagen',
   },
   async ({ url, nombre, formato, agente }) => {
     try {
-      const tmp = join(ROOT, 'trabajos', '_descargas')
-      mkdirSync(tmp, { recursive: true })
-      const src = await download(url, join(tmp, `${Date.now()}${extname(new URL(url).pathname) || '.img'}`))
+      const src = await download(url, join(trabajoDir(agente), `.img-${Date.now()}${extname(new URL(url).pathname) || '.img'}`))
       const dest = outPath(agente, nombre, '.' + formato)
-      await ffmpeg(['-i', src, ...(formato === 'jpg' ? ['-q:v', '2'] : []), '-frames:v', '1', dest])
+      try { await ffmpeg(['-i', src, ...(formato === 'jpg' ? ['-q:v', '2'] : []), '-frames:v', '1', dest]) } finally { rmSync(src, { force: true }) }
       return ok(`Imagen guardada: ${dest}`)
     } catch (e) { return fail(e) }
   })
@@ -274,8 +317,9 @@ server.tool('quitar_fragmentos',
       const total = await duration(f)
       const keep = keepRanges(total, fragmentos)
       if (!keep.length) return fail('Esos fragmentos cubren todo el video')
-      const dest = outPath(agente, `${basename(f, extname(f))} editado`, '.mp4')
-      await renderKeep(f, keep, dest)
+      const { dest, reuso } = await intermedio(agente, 'fragmentos', f, { fragmentos })
+      if (reuso) return ok(`Video editado: ${reusado(dest)}`)
+      await generar(dest, () => renderKeep(f, keep, dest, agente))
       return ok(`Video editado: ${dest}\nDuración: ${total.toFixed(1)} s → ${(await duration(dest)).toFixed(1)} s (${fragmentos.length} fragmentos quitados)`)
     } catch (e) { return fail(e) }
   })
@@ -316,12 +360,11 @@ server.tool('insertar_imagenes',
         chains.push(`[${last}][im${i}]overlay=${bx}:${by}:eof_action=pass:enable='between(t,${im.inicio.toFixed(3)},${im.fin.toFixed(3)})'[v${i}]`)
         last = `v${i}`
       }
-      const filterFile = join(ROOT, 'trabajos', '_descargas', `broll-${Date.now()}.txt`)
-      mkdirSync(dirname(filterFile), { recursive: true })
-      writeFileSync(filterFile, chains.join(';'))
-      const dest = outPath(agente, `${basename(f, extname(f))} con imagenes`, '.mp4')
-      await ffmpeg([...inputs, '-filter_complex_script', filterFile, '-map', `[${last}]`, '-map', '0:a?',
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'copy', dest])
+      const { dest, reuso } = await intermedio(agente, 'imagenes', f, { imagenes })
+      if (reuso) return ok(`Video con imágenes de apoyo: ${reusado(dest)}`)
+      await generar(dest, () => conAuxiliar(agente, 'broll.txt', chains.join(';'), (aux, dir) =>
+        ffmpeg([...inputs, '-filter_complex_script', join(dir, aux), '-map', `[${last}]`, '-map', '0:a?',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'copy', dest])))
       return ok(`Video con ${imagenes.length} imágenes de apoyo: ${dest}`)
     } catch (e) { return fail(e) }
   })
@@ -358,12 +401,10 @@ server.tool('texto_en_pantalla',
         '', '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
         ...textos.map(x => `Dialogue: 0,${t(x.inicio)},${t(x.fin)},T,,0,0,${x.posicion === 'abajo' ? Math.round(H * 0.24) : 0},,{\\an${align[x.posicion]}\\fad(150,150)\\fscx70\\fscy70\\t(0,180,\\fscx108\\fscy108)\\t(180,300,\\fscx100\\fscy100)}${x.texto.replace(/\n/g, '\\N')}`),
       ].join('\n')
-      const work = join(ROOT, 'trabajos', '_descargas')
-      mkdirSync(work, { recursive: true })
-      const assName = `textos-${Date.now()}.ass`
-      writeFileSync(join(work, assName), ass)
-      const dest = outPath(agente, `${basename(f, extname(f))} con textos`, '.mp4')
-      await ffmpeg(['-i', f, '-vf', `subtitles=${assName}`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'copy', dest], { cwd: work })
+      const { dest, reuso } = await intermedio(agente, 'textos', f, { textos, color_caja, color_texto, tamano })
+      if (reuso) return ok(`Video con textos animados: ${reusado(dest)}`)
+      await generar(dest, () => conAuxiliar(agente, 'textos.ass', ass, (aux, dir) =>
+        ffmpeg(['-i', f, '-vf', `subtitles=${aux}`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'copy', dest], { cwd: dir })))
       return ok(`Video con ${textos.length} textos animados: ${dest}`)
     } catch (e) { return fail(e) }
   })
@@ -380,8 +421,9 @@ server.tool('limpiar_audio',
       const f = await resolveInput(archivo, agente)
       const nr = { suave: 8, medio: 14, fuerte: 22 }[ruido]
       const af = `highpass=f=80,afftdn=nr=${nr}:nf=-30:tn=1,acompressor=threshold=-20dB:ratio=3:attack=10:release=150,loudnorm=I=-16:TP=-1.5:LRA=11`
-      const dest = outPath(agente, `${basename(f, extname(f))} audio limpio`, '.mp4')
-      await ffmpeg(['-i', f, '-af', af, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', dest])
+      const { dest, reuso } = await intermedio(agente, 'audio', f, { ruido })
+      if (reuso) return ok(`Audio limpio: ${reusado(dest)}`)
+      await generar(dest, () => ffmpeg(['-i', f, '-af', af, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', dest]))
       return ok(`Audio limpio: ${dest}`)
     } catch (e) { return fail(e) }
   })
@@ -416,7 +458,7 @@ server.tool('render_animacion',
   },
   async ({ proyecto, html, archivos, nombre, formato, agente }) => {
     try {
-      const dir = join(ROOT, 'trabajos', '_hyperframes', safe(proyecto) || 'proyecto')
+      const dir = join(trabajoDir(agente), 'hyperframes', safe(proyecto) || 'proyecto')
       mkdirSync(dir, { recursive: true })
       for (const a of archivos) {
         const src = await resolveInput(a, agente)
@@ -426,8 +468,9 @@ server.tool('render_animacion',
       writeFileSync(join(dir, 'index.html'), html)
       let lint = ''
       try { lint = await hyperframes(['lint'], dir) } catch (e) { lint = e.message }
-      const dest = outPath(agente, nombre, '.' + formato)
-      await hyperframes(['render', '--output', `"${dest}"`, ...(formato === 'webm' ? ['--format', 'webm'] : [])], dir)
+      const { dest, reuso } = await intermedio(agente, 'animacion', safe(nombre) || 'animacion', { html, archivos, formato }, '.' + formato)
+      if (reuso) return ok(`Animación renderizada: ${reusado(dest)}\nProyecto: ${dir}`)
+      await generar(dest, () => hyperframes(['render', '--output', `"${dest}"`, ...(formato === 'webm' ? ['--format', 'webm'] : [])], dir))
       if (!existsSync(dest)) return fail('El render terminó sin archivo de salida. Revisa la composición.\n' + lint.slice(-1500))
       return ok(`Animación renderizada: ${dest}\nDuración: ${(await duration(dest)).toFixed(1)} s\nProyecto: ${dir}\nLint: ${lint.split('\n').filter(l => /error|warning/i.test(l)).slice(0, 6).join(' | ') || 'sin observaciones'}`)
     } catch (e) { return fail(e) }
@@ -455,11 +498,13 @@ server.tool('transcribir',
   async ({ archivo, idioma, agente }) => {
     try {
       const f = await resolveInput(archivo, agente)
-      const { text, words } = await transcribeFile(f, idioma)
-      const name = basename(f, extname(f))
-      const txt = outPath(agente, `${name} transcripcion`, '.txt')
+      const { dest: cache } = await intermedio(agente, 'transcripcion', f, { idioma }, '.json')
+      let text, words
+      if (existsSync(cache)) ({ text, words } = JSON.parse(readFileSync(cache, 'utf8')))
+      else { ({ text, words } = await transcribeFile(f, idioma)); writeFileSync(cache, JSON.stringify({ text, words })) }
+      const txt = cache.replace(/\.json$/, '.txt')
       writeFileSync(txt, text)
-      const srt = txt.replace(/\.txt$/, '.srt')
+      const srt = cache.replace(/\.json$/, '.srt')
       writeFileSync(srt, toSrt(words))
       return ok(`Transcripción guardada en:\n${txt}\n${srt}\n\nFrases con tiempos exactos en segundos (úsalas para decidir cortes con quitar_fragmentos, sin volver a transcribir):\n${timeline(words).slice(0, 30000)}`)
     } catch (e) { return fail(e) }
@@ -477,6 +522,8 @@ server.tool('cortar_silencios',
   async ({ archivo, umbral_db, silencio_min, margen, agente }) => {
     try {
       const f = await resolveInput(archivo, agente)
+      const previo = await intermedio(agente, 'sinsilencios', f, { umbral_db, silencio_min, margen })
+      if (previo.reuso) return ok(`Video sin silencios: ${reusado(previo.dest)}`)
       const total = await duration(f)
       const { stderr } = await ffmpeg(['-i', f, '-af', `silencedetect=noise=${umbral_db}dB:d=${silencio_min}`, '-f', 'null', '-'], { raw: true })
       const starts = [...stderr.matchAll(/silence_start: ([\d.]+)/g)].map(m => +m[1])
@@ -490,8 +537,9 @@ server.tool('cortar_silencios',
       })
       if (total - cursor > 0.15) keep.push([cursor, total])
       if (!keep.length) return ok('No encontré partes con voz; revisa el umbral.')
-      const dest = outPath(agente, `${basename(f, extname(f))} sin silencios`, '.mp4')
-      await renderKeep(f, keep, dest)
+      const { dest, reuso } = await intermedio(agente, 'sinsilencios', f, { umbral_db, silencio_min, margen })
+      if (reuso) return ok(`Video sin silencios: ${reusado(dest)}`)
+      await generar(dest, () => renderKeep(f, keep, dest, agente))
       const nueva = await duration(dest)
       return ok(`Video sin silencios: ${dest}\nDuración: ${total.toFixed(1)} s → ${nueva.toFixed(1)} s (${keep.length} tomas)`)
     } catch (e) { return fail(e) }
@@ -512,21 +560,20 @@ server.tool('subtitular',
   async ({ archivo, srt, idioma, tamano, color, posicion, mayusculas, agente }) => {
     try {
       const f = await resolveInput(archivo, agente)
-      const work = join(ROOT, 'trabajos', '_descargas')
-      mkdirSync(work, { recursive: true })
+      const previo = await intermedio(agente, 'subtitulos', f, { srt: srt || '', idioma, tamano, color, posicion, mayusculas })
+      if (previo.reuso && existsSync(previo.dest.replace(/\.mp4$/, '.srt'))) return ok(`Video subtitulado: ${reusado(previo.dest)}\nSubtítulos: ${previo.dest.replace(/\.mp4$/, '.srt')}`)
       let srtText
       if (srt) srtText = readFileSync(findInput(srt, agente), 'utf8')
       else srtText = toSrt((await transcribeFile(f, idioma)).words, 4)
       if (mayusculas) srtText = srtText.split('\n').map(l => /-->|^\d+$/.test(l) ? l : l.toUpperCase()).join('\n')
-      const srtName = `subs-${Date.now()}.srt`
-      writeFileSync(join(work, srtName), srtText)
       const align = { abajo: 2, centro: 10, arriba: 8 }[posicion]
       const hex = color.replace('#', '').padStart(6, '0')
       const bgr = hex.slice(4, 6) + hex.slice(2, 4) + hex.slice(0, 2)
       const style = `FontName=Montserrat,Bold=1,FontSize=${tamano},PrimaryColour=&H00${bgr},OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=${align},MarginV=60`
-      const dest = outPath(agente, `${basename(f, extname(f))} subtitulado`, '.mp4')
+      const dest = previo.dest
       // ffmpeg corre dentro de la carpeta de trabajo para evitar problemas de rutas de Windows en el filtro
-      await ffmpeg(['-i', f, '-vf', `subtitles=${srtName}:force_style='${style}'`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'copy', dest], { cwd: work })
+      await generar(dest, () => conAuxiliar(agente, 'subs.srt', srtText, (aux, dir) =>
+        ffmpeg(['-i', f, '-vf', `subtitles=${aux}:force_style='${style}'`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'copy', dest], { cwd: dir })))
       const srtOut = dest.replace(/\.mp4$/, '.srt')
       writeFileSync(srtOut, srtText)
       return ok(`Video subtitulado: ${dest}\nSubtítulos: ${srtOut}`)
@@ -539,8 +586,9 @@ server.tool('recortar_video',
   async ({ archivo, inicio, fin, agente }) => {
     try {
       const f = await resolveInput(archivo, agente)
-      const dest = outPath(agente, `${basename(f, extname(f))} recorte`, '.mp4')
-      await ffmpeg(['-ss', inicio, '-to', fin, '-i', f, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', dest])
+      const { dest, reuso } = await intermedio(agente, 'recorte', f, { inicio, fin })
+      if (reuso) return ok(`Recorte guardado: ${reusado(dest)}`)
+      await generar(dest, () => ffmpeg(['-ss', inicio, '-to', fin, '-i', f, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', dest]))
       return ok(`Recorte guardado: ${dest}`)
     } catch (e) { return fail(e) }
   })
@@ -561,9 +609,10 @@ server.tool('unir_videos',
       const norm = files.map((_, i) =>
         `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v${i}];[${i}:a]aresample=48000[a${i}]`).join(';')
       const concat = files.map((_, i) => `[v${i}][a${i}]`).join('') + `concat=n=${files.length}:v=1:a=1[v][a]`
-      const dest = outPath(agente, nombre, '.mp4')
-      await ffmpeg([...files.flatMap(f => ['-i', f]), '-filter_complex', `${norm};${concat}`, '-map', '[v]', '-map', '[a]',
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', dest])
+      const { dest, reuso } = await intermedio(agente, 'unido', files[0], { files, formato, nombre })
+      if (reuso) return ok(`Video unido: ${reusado(dest)}`)
+      await generar(dest, () => ffmpeg([...files.flatMap(f => ['-i', f]), '-filter_complex', `${norm};${concat}`, '-map', '[v]', '-map', '[a]',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', dest]))
       return ok(`Video unido: ${dest}`)
     } catch (e) { return fail(e) }
   })
@@ -583,8 +632,9 @@ server.tool('formato_video',
       const vf = modo === 'recortar'
         ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`
         : `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black`
-      const dest = outPath(agente, `${basename(f, extname(f))} ${formato}`, '.mp4')
-      await ffmpeg(['-i', f, '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'copy', dest])
+      const { dest, reuso } = await intermedio(agente, formato, f, { modo })
+      if (reuso) return ok(`Video en formato ${formato}: ${reusado(dest)}`)
+      await generar(dest, () => ffmpeg(['-i', f, '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'copy', dest]))
       return ok(`Video en formato ${formato}: ${dest}`)
     } catch (e) { return fail(e) }
   })
@@ -595,9 +645,65 @@ server.tool('extraer_audio',
   async ({ archivo, agente }) => {
     try {
       const f = await resolveInput(archivo, agente)
-      const dest = outPath(agente, `${basename(f, extname(f))} audio`, '.mp3')
-      await ffmpeg(['-i', f, '-vn', '-c:a', 'libmp3lame', '-q:a', '2', dest])
+      const { dest, reuso } = await intermedio(agente, 'mp3', f, {}, '.mp3')
+      if (!reuso) await generar(dest, () => ffmpeg(['-i', f, '-vn', '-c:a', 'libmp3lame', '-q:a', '2', dest]))
       return ok(`Audio: ${dest}`)
+    } catch (e) { return fail(e) }
+  })
+
+// ---------- Entrega final de video ----------
+// Solo lo que pase por aquí llega al dueño y a Drive, con nombre limpio <Cliente>_<tema>_<formato>_v<N>.
+// El motor pone AGENTES_VERSION (N) y AGENTES_CLIENTE_NOMBRE.
+server.tool('entregar_video',
+  'Marca un video como ENTREGA FINAL de la tarea. Solo los videos que pases aquí (y su .srt) llegan al dueño y a Drive; los pasos intermedios se quedan en trabajo/ y no se entregan. Llámala al final, una vez por cada video final (por ejemplo, el short y el de YouTube). El nombre lo pone el motor: <Cliente>_<tema>_<short|youtube>_v<N>.mp4.',
+  {
+    archivo: z.string().describe('El video final (ruta o nombre que devolvió la última herramienta)'),
+    tema: z.string().describe('Tema en 2 a 4 palabras, sin el nombre del cliente (ej. "destapar lavaplatos")'),
+    formato: z.enum(['short', 'youtube']).optional().describe('short = vertical (Reels/TikTok/Shorts); youtube = horizontal. Si no lo indicas, se deduce del tamaño.'),
+    srt: z.string().optional().describe('Subtítulos finales (.srt). Si no lo indicas y el video tiene un .srt al lado (de subtitular), se usa ese.'),
+    agente: agenteParam,
+  },
+  async ({ archivo, tema, formato, srt, agente }) => {
+    try {
+      const f = await resolveInput(archivo, agente)
+      const v = await validarVideo(f, ffprobeStatic.path)
+      if (!v.ok) return fail(`No es un video válido: ${v.motivo}`)
+      const fmt = formato || formatoPorTamano(v.ancho, v.alto)
+      const n = Number(process.env.AGENTES_VERSION) || 1
+      const nombre = nombreFinal({ cliente: process.env.AGENTES_CLIENTE_NOMBRE || '', tema, formato: fmt, n, ext: extname(f) || '.mp4' })
+      const dest = join(finalDir(agente), nombre)
+      copyFileSync(f, dest)
+      const lineas = [`Entrega final: ${dest}`, `Formato: ${fmt} (${v.ancho}x${v.alto}, ${v.duracion.toFixed(1)} s)`]
+      const srtOrigen = srt ? findInput(srt, agente) : [f.replace(/\.[^.]+$/, '.srt')].find(x => existsSync(x))
+      if (srtOrigen) {
+        const srtDest = dest.replace(/\.[^.]+$/, '.srt')
+        copyFileSync(srtOrigen, srtDest)
+        lineas.push(`Subtítulos: ${srtDest}`)
+      }
+      return ok(lineas.join('\n'))
+    } catch (e) { return fail(e) }
+  })
+
+// ---------- Publicación en redes (vidIQ) ----------
+// vidiq_video_upload({localFile}) devuelve un comando para subir el archivo; el agente no tiene Bash, así que
+// esta herramienta hace esa subida. Solo videos de la carpeta aprobada de la tarea (AGENTES_PUBLICAR_DIR, la pone
+// el motor) y solo hacia el enlace firmado de vidIQ en Google Storage. No ejecuta el comando: solo saca el enlace.
+server.tool('subir_video_vidiq',
+  'Sube a vidIQ un video aprobado de esta tarea. Paso 1: llama a vidiq_video_upload con localFile {path, sizeBytes, contentType} (la ruta y el tamaño te los da esta herramienta si la llamas solo con "archivo"). Paso 2: pásale aquí el "command" que te devolvió. Paso 3: llama a vidiq_video_upload con el uploadId para confirmar que quedó "ready".',
+  {
+    archivo: z.string().describe('Ruta absoluta del video aprobado (de la lista de la tarea)'),
+    comando: z.string().optional().describe('El "command" que devolvió vidiq_video_upload. Sin él, solo te digo ruta, tamaño y tipo para pedir la subida.'),
+  },
+  async ({ archivo, comando }) => {
+    try {
+      const r = rutaPublicable(archivo, process.env.AGENTES_PUBLICAR_DIR || '')
+      if (!r.ok) return fail(r.motivo)
+      if (!comando) return ok(JSON.stringify({ path: r.ruta, sizeBytes: r.bytes, contentType: r.tipo }))
+      if (!comando.includes(r.ruta)) return fail('Ese comando es de otro archivo: pide la subida con la ruta de este video')
+      const url = urlDeSubida(comando)
+      if (!url) return fail('No encontré el enlace de subida de vidIQ en el comando')
+      await subirReanudable({ ...r, url })
+      return ok(`Subido (${(r.bytes / 1e6).toFixed(1)} MB). Ahora llama a vidiq_video_upload con el uploadId para confirmar.`)
     } catch (e) { return fail(e) }
   })
 

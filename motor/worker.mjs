@@ -37,6 +37,7 @@ import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloCo
 import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro, quitarBloques, hijasListas as hijasListasPuro, participantesSala, quienResponde, reglaIdioma, limpiarRutasLocales } from './agencia.mjs'
 import { spawn } from 'node:child_process'
 import { tomarCandado, soltarCandado, SALIDA_YA_HAY_MOTOR } from './candado.mjs'
+import { videosFinales, decidirPublicacion, tareaDePublicacion, leerBorrador, promptPublicar, leerResultadoPublicacion, promptCuentas, parsearCuentas, promptConectar, parsearConexion, PLATAFORMAS_CONECTABLES } from './publicacion.mjs'
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, readdirSync, statSync, cpSync, copyFileSync } from 'node:fs'
 import { join, dirname, resolve, relative, isAbsolute, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1203,7 +1204,7 @@ function mcpConfigPara(tools) {
   return out
 }
 
-function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '', agentId = '' } = {}) {
+function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '', agentId = '', videoEnv = {} } = {}) {
   return new Promise((resolve) => {
     // B4: las herramientas que envían, publican o gastan NO van en --allowedTools; cada uso pasa por
     // pedir_aprobacion (--permission-prompt-tool), que le pregunta a un humano. Sin el servidor de
@@ -1229,7 +1230,7 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     // Con suscripción (Pro/Max) se quita ANTHROPIC_API_KEY: si estuviera, Claude Code cobraría por API sin avisar.
     // Con plan "api" se usa la clave del panel (o la del entorno).
     // AGENTES_CLIENTE / AGENTES_TAREA: buscar_historial solo ve el historial de este cliente (vacío = sin historial)
-    const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: clienteId, AGENTES_TAREA: tareaId,
+    const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: clienteId, AGENTES_TAREA: tareaId, ...videoEnv,
       ...(mcpExtra.length && secreto('PAGESPEED_API_KEY') ? { PAGESPEED_API_KEY: secreto('PAGESPEED_API_KEY') } : {}),
       ...entornoCliente,
       ...(ejecucion ? { AGENTES_EJECUCION: ejecucion, AGENTES_APROBACION_URL: servidorAprobaciones.url, AGENTES_APROBACION_TOKEN: servidorAprobaciones.token, MCP_TOOL_TIMEOUT: String(TIEMPO_APROBACION_MS + 60_000) } : {}) }
@@ -1342,7 +1343,7 @@ function motorDe(agent, t) {
 }
 // Herramientas que solo existen en Claude Code (servidores MCP: medios, video, Magnific, Gmail, Drive…)
 // (Leer Drive no cuenta: es opcional y Codex/Gemini trabajan sin él)
-const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad', 'analitica', 'ads', 'email']
+const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad', 'analitica', 'ads', 'email', 'publicar_redes']
 // Antigravity también puede: las herramientas de medios del motor (entregas y edición de video, conectadas por
 // tarea como plugin MCP) e imágenes con su propio generador en lugar de Magnific.
 const GRUPOS_ANTIGRAVITY = ['entregas', 'editor_video', 'magnific_imagenes']
@@ -1387,7 +1388,7 @@ async function correrMotor(m, agent, prompt, cwd, opts, t) {
     const herramientas = opts?.sinHerramientas ? [] : toolsFor(agent, t).filter(x => x.startsWith('mcp__agentes-media__')).map(x => x.slice('mcp__agentes-media__'.length))
     const mcp = herramientas.length ? {
       command: process.execPath, args: [join(ROOT, 'media-server.mjs')], herramientas,
-      env: { AGENTES_AGENTE: opts?.agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: opts?.clienteId || '', AGENTES_TAREA: opts?.tareaId || '' },
+      env: { AGENTES_AGENTE: opts?.agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: opts?.clienteId || '', AGENTES_TAREA: opts?.tareaId || '', ...(opts?.videoEnv || {}) },
     } : null
     const conImagenes = !opts?.sinHerramientas && gruposExclusivos(agent, t).includes('magnific_imagenes')
     const notas = [
@@ -1519,7 +1520,8 @@ function filesSince(dir, sinceMs, out = []) {
   for (const f of readdirSync(dir)) {
     const p = join(dir, f)
     let st; try { st = statSync(p) } catch { continue }
-    if (st.isDirectory()) { if (f !== 'Entrada') filesSince(p, sinceMs, out) }
+    // Entrada = lo que dejó el cliente; trabajo = pasos intermedios de video (nunca se entregan)
+    if (st.isDirectory()) { if (f !== 'Entrada' && f !== 'trabajo') filesSince(p, sinceMs, out) }
     else if (st.mtimeMs >= sinceMs) out.push(p)
   }
   return out
@@ -1613,6 +1615,147 @@ async function syncApproved(t) {
   } finally {
     syncing.delete(t.id)
   }
+}
+
+// ---------- Publicación en redes (vidIQ) ----------
+// Registro local (fuente de verdad, no el doc de la tarea): tareas "Publicar" que creó el motor, su carpeta aprobada y
+// su estado. Así nadie puede fabricar una tarea con un campo publicacion que apunte a otra carpeta o que publique.
+const PUBLICACIONES = join(ROOT, 'logs', 'publicaciones.json')
+const publicaciones = (() => { try { return JSON.parse(readFileSync(PUBLICACIONES, 'utf8')) } catch { return {} } })()
+const guardarPublicaciones = () => writeFileSync(PUBLICACIONES, JSON.stringify(publicaciones, null, 1))
+const HERRAMIENTA_PUBLICAR = 'mcp__claude_ai_vidIQ__vidiq_social_post_publish'
+const enPublicacion = new Set()
+
+function despuesDeAprobar(t) {
+  if (enPublicacion.has(t.id)) return
+  const reg = publicaciones[t.id]
+  if (reg?.tipo === 'publicar') return publicarAprobada(t)
+  if (reg?.tipo === 'origen') return // ya tiene su tarea de publicación
+  return encolarPublicacion(t)
+}
+
+// Video aprobado de un cliente con "Publicar al aprobar" → tarea "Publicar: …" para su publicador
+async function encolarPublicacion(t) {
+  const cliente = clientFor(t)
+  if (!cliente?.publicacion?.activo) return
+  const f = taskFolder(t)
+  const carpeta = join(agencyRoot(), f.cliente, 'Aprobados', f.nombre)
+  const videos = videosFinales(carpeta)
+  const pub = cliente.publicacion
+  const d = decidirPublicacion({ tarea: t, cliente, videos })
+  if (!d.publicar) { if (videos.length) log(`📣 "${t.tarea}" no se publica: ${d.motivo}`); return }
+  const publicador = agents.get(pub.publicadorId)
+  if (!publicador || publicador.active === false) { log(`📣 "${t.tarea}" no se publica: el publicador del cliente no existe o está inactivo`); return }
+  enPublicacion.add(t.id)
+  try {
+    publicaciones[t.id] = { tipo: 'origen', at: Date.now() }
+    guardarPublicaciones()
+    const datos = tareaDePublicacion({ tarea: t, cliente, carpeta, videos })
+    const hoy = fechaLocal(Date.now(), ZONA())
+    const ref = await addDoc(collection(db, 'tasks'), {
+      tarea: datos.tarea, descripcion: datos.descripcion,
+      asignado: publicador.id, paraDepartamento: false, asignadoAgente: true,
+      departamentoId: t.departamentoId || '', cliente: t.cliente || cliente.nombre || '', clienteId: t.clienteId || cliente.id || '',
+      tipoTareaId: '', capacidad: 'general', brief: {}, briefCampos: {}, permisosExtra: [],
+      prioridad: t.prioridad || 'media', estado: 'pendiente', fechaRequerimiento: hoy, fechaVencimiento: hoy,
+      links: '', linkTerminada: '', feedback: '', totalTimeSeconds: 0,
+      publicacion: { ...datos.publicacion, estado: 'borrador' },
+      creadoPor: 'Publicación automática', creadaPor: 'publicacion',
+      createdAt: serverTimestamp(), createdBy: env.AGENT_EMAIL, lastEditedBy: env.AGENT_EMAIL, lastEditedAt: serverTimestamp(),
+    })
+    publicaciones[t.id] = { tipo: 'origen', tareaId: ref.id, at: Date.now() }
+    publicaciones[ref.id] = { tipo: 'publicar', origen: t.id, carpeta, estado: 'borrador', at: Date.now() }
+    guardarPublicaciones()
+    updateDoc(doc(db, 'tasks', t.id), { publicacionTareaId: ref.id }).catch(() => {}) // solo si es tarea de agente
+    log(`📣 "${t.tarea}" aprobada → tarea de publicación para ${publicador.name}`)
+  } catch (e) {
+    delete publicaciones[t.id]; guardarPublicaciones()
+    log(`✖ No pude crear la tarea de publicación de "${t.tarea}":`, e.code || e.message)
+  } finally { enPublicacion.delete(t.id) }
+}
+
+// El dueño aprobó el BORRADOR (tarea "Publicar") → llamada corta a Claude que solo puede publicar esos borradores
+async function publicarAprobada(t) {
+  const reg = publicaciones[t.id]
+  if (!reg || reg.estado === 'publicada' || reg.estado === 'publicando') return
+  const ref = doc(db, 'tasks', t.id)
+  const b = leerBorrador(join(ROOT, 'trabajos', t.id, 'salida', 'publicacion.json'))
+  if (!b.ok) {
+    reg.estado = 'error'; guardarPublicaciones()
+    log(`✖ No publico "${t.tarea}": ${b.motivo}`)
+    await updateDoc(ref, { 'publicacion.estado': 'error', 'publicacion.error': b.motivo }).catch(() => {})
+    return
+  }
+  enPublicacion.add(t.id)
+  reg.estado = 'publicando'; guardarPublicaciones()
+  await updateDoc(ref, { 'publicacion.estado': 'publicando' }).catch(() => {})
+  const cwd = join(ROOT, 'trabajos', `${t.id}-publicar`)
+  mkdirSync(cwd, { recursive: true })
+  // La aprobación ya la dio el dueño en el panel: se marca la herramienta como permitida en esta tarea, así no pregunta otra vez
+  permisosPorTarea.set(t.id, new Set([HERRAMIENTA_PUBLICAR]))
+  try {
+    const tools = [HERRAMIENTA_PUBLICAR, 'mcp__claude_ai_vidIQ__vidiq_social_post_status', 'mcp__claude_ai_vidIQ__vidiq_job_poll']
+    const r = await runClaude(promptPublicar(b.borradores), cwd, { tools, agentName: 'Publicación', maxTurns: 15, clienteId: clienteHistorial(t), tareaId: t.id, agentId: t.asignado })
+    const res = leerResultadoPublicacion(r.json?.result || '')
+    reg.estado = res.ok ? 'publicada' : 'error'; reg.resultado = res; guardarPublicaciones()
+    await updateDoc(ref, { publicacion: { ...(t.publicacion || {}), estado: reg.estado, destinos: res.destinos, error: res.error || null, publicadaAt: res.ok ? serverTimestamp() : null } }).catch(() => {})
+    anotar(t, 'entrega', res.ok ? `Publicado: ${res.destinos.map(x => `${x.red} ${x.estado}${x.url ? ' ' + x.url : ''}`).join(' · ')}` : `Error al publicar: ${res.error}`)
+    log(res.ok ? `📣 Publicada "${t.tarea}": ${res.destinos.map(x => `${x.red} ${x.estado}`).join(', ')}` : `✖ No se pudo publicar "${t.tarea}": ${res.error}`)
+    telegram?.notify(res.ok ? `📣 Publicado: ${t.tarea}\n${res.destinos.map(x => `${x.red}: ${x.estado} ${x.url || ''}`).join('\n')}` : `✖ No se pudo publicar "${t.tarea}": ${res.error}`)
+  } catch (e) {
+    reg.estado = 'error'; guardarPublicaciones()
+    log(`✖ Error publicando "${t.tarea}":`, e.message)
+    await updateDoc(ref, { 'publicacion.estado': 'error', 'publicacion.error': e.message }).catch(() => {})
+  } finally {
+    permisosPorTarea.delete(t.id)
+    enPublicacion.delete(t.id)
+  }
+}
+
+// Cuentas de redes en el panel: el panel pide en redesOps (listar | conectar) y el motor responde con Claude + vidIQ.
+// La lista queda en config/redesSociales (sin tokens: vidIQ los guarda). Se refresca al arrancar y cada hora.
+const redesOpsVistas = new Set()
+let redesCola = Promise.resolve()
+const encolarRedes = (fn) => { redesCola = redesCola.then(fn).catch(e => log('✖ Redes:', e.message)) ; return redesCola }
+async function claudeVidiq(prompt, tool, nombre) {
+  const cwd = join(ROOT, 'trabajos', 'redes')
+  mkdirSync(cwd, { recursive: true })
+  const r = await runClaude(prompt, cwd, { tools: [tool], agentName: nombre, maxTurns: 6 })
+  if (r.code !== 0 || !r.json?.result) throw new Error(r.err || 'Claude no respondió')
+  return r.json.result
+}
+async function actualizarCuentasRedes(por = 'motor') {
+  const res = await claudeVidiq(promptCuentas(), 'mcp__claude_ai_vidIQ__vidiq_social_account_list', 'Redes')
+  const cuentas = parsearCuentas(res)
+  if (!cuentas) throw new Error('vidIQ no devolvió la lista de cuentas')
+  await setDoc(doc(db, 'config', 'redesSociales'), { cuentas, actualizadoAt: serverTimestamp(), actualizadoPor: por, error: null })
+  log(`🔗 Cuentas de redes: ${cuentas.map(c => `${c.platform} ${c.displayName || c.platformAccountId}${c.canPublish ? '' : ' (sin permiso)'}`).join(', ') || 'ninguna'}`)
+  return cuentas
+}
+function atenderRedesOp(op) {
+  if (redesOpsVistas.has(op.id)) return
+  redesOpsVistas.add(op.id)
+  encolarRedes(async () => {
+    const ref = doc(db, 'redesOps', op.id)
+    const creada = op.createdAt?.toMillis?.() || Date.now()
+    if (Date.now() - creada > 30 * 60 * 1000) { await updateDoc(ref, { estado: 'error', error: 'El pedido caducó (el motor estaba apagado)' }).catch(() => {}); return }
+    try {
+      await updateDoc(ref, { estado: 'trabajando' })
+      if (op.tipo === 'listar') {
+        const cuentas = await actualizarCuentasRedes(op.creadoPor || 'panel')
+        await updateDoc(ref, { estado: 'listo', total: cuentas.length, resueltoAt: serverTimestamp() })
+      } else if (op.tipo === 'conectar') {
+        if (!PLATAFORMAS_CONECTABLES.includes(op.platform)) throw new Error('Plataforma no válida')
+        const tool = op.platform === 'YOUTUBE' ? 'mcp__claude_ai_vidIQ__vidiq_connect_youtube_channel' : 'mcp__claude_ai_vidIQ__vidiq_social_account_connect'
+        const c = parsearConexion(await claudeVidiq(promptConectar(op.platform, op.platformAccountId || ''), tool, 'Redes'))
+        if (!c.url) throw new Error(c.mensaje || 'vidIQ no devolvió un enlace de autorización (¿ya está conectada?)')
+        await updateDoc(ref, { estado: 'listo', url: c.url, mensaje: c.mensaje || '', resueltoAt: serverTimestamp() })
+        log(`🔗 Enlace para conectar ${op.platform} listo en el panel`)
+      } else throw new Error('Pedido desconocido')
+    } catch (e) {
+      await updateDoc(ref, { estado: 'error', error: String(e.message || e).slice(0, 300) }).catch(() => {})
+    }
+  })
 }
 
 // ---------- ejecutar una tarea ----------
@@ -1726,7 +1869,12 @@ async function runTask(t) {
   writeFileSync(join(cwd, 'tarea.md'), prompt)
 
   for (const m of mensajesDeTarea(t, clienteHistorial(t))) anotar(t, m.rol, m.texto)
-  const opts = { tools: toolsFor(agent, t), agentName: deliveryName(agent), maxTurns: maxTurnsFor(agent), clienteId: clienteHistorial(t), tareaId: t.id, agentId: agent.id }
+  // Video: N de la próxima versión y nombre del cliente para entregar_video (<Cliente>_<tema>_<formato>_v<N>)
+  const videoEnv = { AGENTES_VERSION: String((lista(t.versiones).at(-1)?.n || 0) + 1), AGENTES_CLIENTE_NOMBRE: client?.nombre || t.cliente || '' }
+  // Publicación: subir_video_vidiq solo acepta videos de la carpeta aprobada que registró el motor (no la del doc)
+  const pubLocal = publicaciones[t.id]
+  if (pubLocal?.carpeta) videoEnv.AGENTES_PUBLICAR_DIR = pubLocal.carpeta
+  const opts = { tools: toolsFor(agent, t), agentName: deliveryName(agent), maxTurns: maxTurnsFor(agent), clienteId: clienteHistorial(t), tareaId: t.id, agentId: agent.id, videoEnv }
   const res = await runModel(agent, prompt, cwd, opts, t)
   if (cancelados.has(t.id)) return terminarCancelada(t, started)
   let extraCost = 0, extraTurns = 0
@@ -2171,6 +2319,22 @@ async function main() {
   })
   escucharSkillOps()
 
+  // Cuentas de redes (vidIQ): pedidos del panel y refresco al arrancar y cada hora
+  const escucharRedesOps = () => onSnapshot(query(collection(db, 'redesOps'), where('estado', '==', 'pendiente')), snap => {
+    snap.forEach(d => atenderRedesOp({ id: d.id, ...d.data() }))
+  }, e => {
+    log('Pedidos de redes sin acceso (publica las reglas de Firestore); reintento en 1 min:', e.code || e.message)
+    setTimeout(escucharRedesOps, 60_000)
+  })
+  escucharRedesOps()
+  const refrescarRedes = () => encolarRedes(() => actualizarCuentasRedes().catch(e => {
+    log('🔗 No pude leer las cuentas de redes:', e.message)
+    setDoc(doc(db, 'config', 'redesSociales'), { error: String(e.message).slice(0, 300), errorAt: serverTimestamp() }, { merge: true }).catch(() => {})
+  }))
+  setTimeout(refrescarRedes, 20_000)
+  // Cada hora solo si algún cliente publica (cada consulta es una llamada corta a Claude)
+  setInterval(() => { if ([...clientsById.values()].some(c => c.publicacion?.activo)) refrescarRedes() }, 60 * 60 * 1000)
+
   onSnapshot(collection(db, 'users'), snap => {
     users.clear()
     snap.forEach(d => users.set(d.id, { uid: d.id, ...d.data() }))
@@ -2199,9 +2363,9 @@ async function main() {
     snap.forEach(d => testProvider({ id: d.id, ...d.data() }))
   }, e => log('Error leyendo proveedores:', e.code || e.message))
 
-  // Entregas aprobadas: copiar la última versión a <Cliente>/Aprobados
+  // Entregas aprobadas: copiar la última versión a <Cliente>/Aprobados (y publicar en redes si toca)
   onSnapshot(query(collection(db, 'tasks'), where('driveSync', '==', 'pendiente')), snap => {
-    snap.forEach(d => { const t = { id: d.id, ...d.data() }; syncApproved(t); encolarAprendizaje(t) })
+    snap.forEach(d => { const t = { id: d.id, ...d.data() }; syncApproved(t).then(() => despuesDeAprobar(t)); encolarAprendizaje(t) })
   }, e => log('Error leyendo aprobadas:', e.code || e.message))
 
   // Skills aprendidas que un admin aprobó: el motor las escribe en disco

@@ -8,13 +8,19 @@
     "mcp__magnific__images_generate", "mcp__magnific__images_upscale", "mcp__magnific__images_expand",
     "mcp__magnific__images_remove_background", "mcp__magnific__images_replace_background", "mcp__magnific__images_restyle",
     "mcp__magnific__images_reimagine", "mcp__magnific__images_relight", "mcp__magnific__images_variations",
-    "mcp__magnific__design_auto_resize", "mcp__agentes-seguridad__run_scan"
+    "mcp__magnific__design_auto_resize", "mcp__agentes-seguridad__run_scan",
+    "mcp__claude_ai_vidIQ__vidiq_social_post_publish", "mcp__claude_ai_vidIQ__vidiq_instagram_publish_reel", "mcp__claude_ai_vidIQ__vidiq_update_video"
   ],
   "herramientas": {
     "web": ["WebSearch", "WebFetch"],
     "archivos": ["Read", "Glob", "Grep"],
     "skills": ["Skill"],
     "historial": ["mcp__agentes-media__buscar_historial"],
+    "publicar_redes": [
+      "mcp__claude_ai_vidIQ__vidiq_social_account_list", "mcp__claude_ai_vidIQ__vidiq_video_upload", "mcp__agentes-media__subir_video_vidiq",
+      "mcp__claude_ai_vidIQ__vidiq_upload_image", "mcp__claude_ai_vidIQ__vidiq_job_poll", "mcp__claude_ai_vidIQ__vidiq_social_post_draft_create",
+      "mcp__claude_ai_vidIQ__vidiq_social_post_draft_update", "mcp__claude_ai_vidIQ__vidiq_social_post_draft_get"
+    ],
     "drive_lectura": [
       "mcp__claude_ai_Google_Drive__search_files",
       "mcp__claude_ai_Google_Drive__read_file_content",
@@ -138,6 +144,23 @@
       "herramientas": ["web", "archivos", "skills", "drive_lectura", "salida"],
       "entrega": "archivos",
       "maxTurns": 80
+    },
+    "publicador": {
+      "nombre": "Publicación en redes",
+      "departamento": "marketing",
+      "modelo": {"recomendado": "claude", "requiereHerramientas": true, "nota": "Usa el conector vidIQ de claude.ai: solo funciona con Claude Code."},
+      "descripcion": "Deja listos en vidIQ los borradores para publicar los videos aprobados en YouTube, TikTok, Facebook e Instagram.",
+      "mision": "Community manager. Toma los videos que el dueño ya aprobó, los sube a vidIQ y arma UN borrador de publicación con el título, la descripción y los hashtags adecuados para cada red. Nunca publica: el dueño revisa el borrador en el panel y el motor lo publica al aprobarlo.",
+      "herramientas": ["archivos", "salida", "publicar_redes"],
+      "entrega": "texto",
+      "maxTurns": 60,
+      "instrucciones": [
+        "1) Copy: busca con buscar_historial y en la carpeta Aprobados del cliente (Glob/Read) el paquete del guionista de este tema (título, descripción y hashtags por red). Úsalo; si no existe, escríbelo tú siguiendo la ficha del cliente.",
+        "2) Video: por cada video aprobado de la tarea llama a subir_video_vidiq solo con archivo (te da path, sizeBytes y contentType); luego vidiq_video_upload con localFile; luego subir_video_vidiq con archivo y el command; por último vidiq_video_upload con el uploadId hasta que esté ready. El vertical (short) va a TikTok, Shorts, Reels y Facebook; el horizontal (youtube) solo a YouTube.",
+        "3) Borrador: vidiq_social_account_list para confirmar que cada cuenta de la tarea tiene canPublish true. Crea UN solo borrador con vidiq_social_post_draft_create (un destino por cuenta; si hay vertical y horizontal, un borrador por video). Usa EXACTAMENTE los ajustes de privacidad, comentarios y música que trae la tarea; nunca los inventes. Si un destino es rechazado, corrígelo con vidiq_social_post_draft_update.",
+        "4) Escribe salida/publicacion.json con {\"postId\": \"...\", \"revision\": \"...\"} de la ÚLTIMA versión del borrador (si hay dos borradores: {\"borradores\": [{postId, revision}, ...]}).",
+        "5) Entrega: por cada red, cuenta, título, texto completo, hashtags, privacidad y hora. Termina con: El motor publicará este borrador cuando lo apruebes. Si te piden correcciones, actualiza el mismo borrador (no crees otro) y reescribe salida/publicacion.json."
+      ]
     },
     "editor_video": {
       "nombre": "Edición de video",

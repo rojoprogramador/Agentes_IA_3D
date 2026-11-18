@@ -3,11 +3,93 @@ import MemoriaEditor from './MemoriaEditor.jsx'
 import GeoCliente from './GeoCliente.jsx'
 import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
-import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
+import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, addDoc, collection } from 'firebase/firestore'
 import Icon from './Icons.jsx'
 import { emptyClient, slugify, toLines, fromLines } from '../agencia.js'
 import { IDIOMAS_DISPONIBLES, IDIOMA_POR_DEFECTO } from '../../../motor/agencia.mjs'
 import { confirmar } from './Confirmar.jsx'
+
+const REDES = [
+  { id: 'YOUTUBE', nombre: 'YouTube', campo: 'pubYoutube' },
+  { id: 'TIKTOK', nombre: 'TikTok', campo: 'pubTiktok' },
+  { id: 'FACEBOOK_PAGES', nombre: 'Facebook', campo: 'pubFacebook' },
+  { id: 'INSTAGRAM', nombre: 'Instagram', campo: 'pubInstagram' },
+]
+
+// Cuentas de redes conectadas a vidIQ. El panel no habla con vidIQ: pide al motor (redesOps) y lee config/redesSociales.
+function CuentasRedes({ form, set, showToast, userEmail }) {
+  const [estado, setEstado] = useState(null)
+  const [op, setOp] = useState(null) // { id, tipo, platform }
+  const [res, setRes] = useState(null)
+  useEffect(() => onSnapshot(doc(db, 'config', 'redesSociales'), d => setEstado(d.data() || {}), () => setEstado({})), [])
+  useEffect(() => {
+    if (!op) return
+    return onSnapshot(doc(db, 'redesOps', op.id), d => setRes(d.data() || null), () => setRes({ estado: 'error', error: 'Sin acceso (¿reglas publicadas?)' }))
+  }, [op])
+  const pedir = async (tipo, platform = '', platformAccountId = '') => {
+    try {
+      const r = await addDoc(collection(db, 'redesOps'), { tipo, platform, platformAccountId, estado: 'pendiente', creadoPor: userEmail || '', createdAt: serverTimestamp() })
+      setRes({ estado: 'pendiente' }); setOp({ id: r.id, tipo, platform })
+    } catch { showToast('No se pudo enviar el pedido al motor', 'error') }
+  }
+  const cuentas = estado?.cuentas || []
+  const ocupado = res && ['pendiente', 'trabajando'].includes(res.estado)
+  const fecha = estado?.actualizadoAt?.toDate?.()
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10, background: 'var(--bg-2)', borderRadius: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <b style={{ fontSize: 13 }}>Cuentas conectadas en vidIQ</b>
+        <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{fecha ? `actualizado ${fecha.toLocaleString('es')}` : estado === null ? 'cargando…' : 'aún sin consultar'}</span>
+        <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} disabled={ocupado} onClick={() => pedir('listar')}>Actualizar</button>
+      </div>
+      {estado?.error && <span style={{ fontSize: 12, color: 'var(--danger)' }}>Última consulta con error: {estado.error}</span>}
+      {cuentas.length === 0 && estado !== null && <span style={{ fontSize: 12.5, color: 'var(--text-3)' }}>No hay cuentas conectadas. Usa los botones de abajo.</span>}
+      {cuentas.map(cu => {
+        const ok = cu.canPublish && cu.connectionActive
+        return (
+          <div key={cu.platform + cu.platformAccountId} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            {cu.avatarUrl ? <img src={cu.avatarUrl} alt="" width={22} height={22} style={{ borderRadius: '50%' }} referrerPolicy="no-referrer" /> : <span style={{ width: 22 }} />}
+            <span style={{ minWidth: 72, color: 'var(--text-3)' }}>{REDES.find(r => r.id === cu.platform)?.nombre}</span>
+            <span>{cu.displayName || cu.username || cu.platformAccountId}</span>
+            <span style={{ fontSize: 11.5, color: ok ? 'var(--success, #2e9d5b)' : 'var(--danger)' }}>{ok ? '● puede publicar' : '● sin permiso'}</span>
+            {!ok && cu.platform !== 'YOUTUBE' && <button type="button" className="btn btn-ghost btn-sm" disabled={ocupado} onClick={() => pedir('conectar', cu.platform, cu.platformAccountId)}>Reconectar</button>}
+          </div>
+        )
+      })}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {REDES.map(r => <button key={r.id} type="button" className="btn btn-secondary btn-sm" disabled={ocupado} onClick={() => pedir('conectar', r.id)}>Conectar {r.nombre}</button>)}
+      </div>
+      {res && (
+        <div style={{ fontSize: 12.5 }}>
+          {ocupado && <span style={{ color: 'var(--text-3)' }}>El motor está consultando a vidIQ… (unos segundos; el motor debe estar encendido)</span>}
+          {res.estado === 'error' && <span style={{ color: 'var(--danger)' }}>{res.error}</span>}
+          {res.estado === 'listo' && op?.tipo === 'listar' && <span>Lista actualizada.</span>}
+          {res.estado === 'listo' && op?.tipo === 'conectar' && res.url && <>
+            <a className="btn btn-primary btn-sm" href={res.url} target="_blank" rel="noopener noreferrer">Abrir autorización de {REDES.find(r => r.id === op.platform)?.nombre}</a>
+            <span style={{ marginLeft: 8, color: 'var(--text-3)' }}>Entra con la cuenta dueña{op.platform === 'YOUTUBE' ? ' y marca todas las casillas' : ''}; al terminar pulsa Actualizar.</span>
+          </>}
+        </div>
+      )}
+      <h4 style={{ margin: '6px 0 0', fontSize: 13.5 }}>¿A qué cuenta publica este cliente?</h4>
+      <div className="form-row">
+        {REDES.map(r => {
+          const opciones = cuentas.filter(cu => cu.platform === r.id)
+          const valor = form[r.campo]
+          return (
+            <div className="form-group" key={r.id}>
+              <label className="form-label">{r.nombre}</label>
+              <select className="form-select" value={valor} onChange={e => set(r.campo, e.target.value)}>
+                <option value="">No publicar aquí</option>
+                {opciones.map(cu => <option key={cu.platformAccountId} value={cu.platformAccountId}>{cu.displayName || cu.username || cu.platformAccountId}{cu.canPublish ? '' : ' (sin permiso)'}</option>)}
+                {valor && !opciones.some(cu => cu.platformAccountId === valor) && <option value={valor}>{valor} (no aparece en vidIQ)</option>}
+              </select>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 const TABS = [
   { id: 'negocio', label: 'Negocio' },
@@ -16,6 +98,7 @@ const TABS = [
   { id: 'activos', label: 'Activos' },
   { id: 'analitica', label: 'Analítica y anuncios' },
   { id: 'email', label: 'Email' },
+  { id: 'publicacion', label: 'Publicación' },
   { id: 'geo', label: 'GEO' },
   { id: 'alcance', label: 'Alcance' },
   { id: 'aprendizajes', label: 'Aprendizajes' },
@@ -76,6 +159,12 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     topeAds: c.ads?.topeMensual ? String(c.ads.topeMensual) : '',
     credGads: '', tokenMeta: '',
     listasEmail: (c.email?.listas || []).join(', '),
+    pubActivo: c.publicacion?.activo === true, pubPublicador: c.publicacion?.publicadorId || '',
+    pubYoutube: c.publicacion?.cuentas?.YOUTUBE?.platformAccountId || '', pubTiktok: c.publicacion?.cuentas?.TIKTOK?.platformAccountId || '',
+    pubFacebook: c.publicacion?.cuentas?.FACEBOOK_PAGES?.platformAccountId || '', pubInstagram: c.publicacion?.cuentas?.INSTAGRAM?.platformAccountId || '',
+    pubYtPrivacidad: c.publicacion?.ajustes?.youtubePrivacidad || 'private', pubTtPrivacidad: c.publicacion?.ajustes?.tiktokPrivacidad || 'SELF_ONLY',
+    pubTtComentarios: c.publicacion?.ajustes?.tiktokComentarios !== false, pubTtMusica: c.publicacion?.ajustes?.tiktokMusicaConfirmada === true,
+    pubIA: c.publicacion?.ajustes?.contenidoIA === true,
     salaActiva: c.sala?.activa === true, salaLider: c.sala?.liderId || '',
     geoActivo: c.geo?.activo === true, geoMarca: c.geo?.marca || c.nombre || '', geoAlias: toLines(c.geo?.alias), geoDominio: c.geo?.dominio || c.activos?.web || '',
     geoCompetidores: toLines(c.geo?.competidores), geoPrompts: toLines(c.geo?.prompts), geoProveedores: c.geo?.proveedores || [],
@@ -123,6 +212,8 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       const dias = (Date.parse(form.vigenciaHasta) - Date.parse(form.vigenciaDesde)) / 86400000
       if (dias < 0 || dias > 90) { showToast('La vigencia del alcance debe ser de 0 a 90 días (para más, se firma otra autorización)', 'error'); return }
     }
+    if (form.pubActivo && !form.pubPublicador) { showToast('Elige el agente que prepara las publicaciones', 'error'); return }
+    if (form.pubActivo && ![form.pubYoutube, form.pubTiktok, form.pubFacebook, form.pubInstagram].some(x => x.trim())) { showToast('Pega el ID de vidIQ de al menos una cuenta', 'error'); return }
     setSaving(true)
     // Link de Drive o ID: se guarda solo el ID de la carpeta
     const folderId = (form.driveFolderId.match(/folders\/([\w-]+)/)?.[1] || form.driveFolderId).trim()
@@ -152,6 +243,17 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       ads: { googleAdsCustomerId: gadsCid, metaAdAccountId: metaCuenta, topeMensual: topeAds },
       geo: { activo: form.geoActivo, marca: form.geoMarca.trim(), alias: fromLines(form.geoAlias), dominio: form.geoDominio.trim(), competidores: fromLines(form.geoCompetidores).slice(0, 15), prompts: fromLines(form.geoPrompts).slice(0, 10), proveedores: form.geoProveedores.slice(0, 3) },
       sala: { activa: form.salaActiva, liderId: form.salaLider },
+      publicacion: {
+        activo: form.pubActivo, publicadorId: form.pubPublicador,
+        cuentas: {
+          YOUTUBE: { platformAccountId: form.pubYoutube.trim() }, TIKTOK: { platformAccountId: form.pubTiktok.trim() },
+          FACEBOOK_PAGES: { platformAccountId: form.pubFacebook.trim() }, INSTAGRAM: { platformAccountId: form.pubInstagram.trim() },
+        },
+        ajustes: {
+          youtubePrivacidad: form.pubYtPrivacidad, tiktokPrivacidad: form.pubTtPrivacidad, tiktokComentarios: form.pubTtComentarios,
+          tiktokMusicaConfirmada: form.pubTtMusica, contenidoIA: form.pubIA,
+        },
+      },
       email: { listas: [...new Set(form.listasEmail.split(/[\s,]+/).map(Number).filter(n => Number.isInteger(n) && n > 0))] },
       updatedAt: serverTimestamp(), updatedBy: userEmail,
     }
@@ -334,6 +436,51 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
               y agrégalo al agente en Herramientas extra.
             </p>
             {field('IDs de listas de Listmonk', 'listasEmail', { placeholder: '3, 7', hint: 'Los ves en Listmonk → Listas (columna ID).' })}
+          </>}
+
+          {tab === 'publicacion' && <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0 }}>
+              Cuando apruebes un video final de este cliente, el agente publicador lo sube a vidIQ y arma el borrador con título,
+              descripción y hashtags por red. Ese borrador te llega a Espera Aprobación: <b>solo se publica cuando lo apruebas</b>.
+              Las cuentas se conectan una sola vez (el motor tiene que estar encendido) y sirven para todos los clientes.
+            </p>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <input type="checkbox" checked={form.pubActivo} onChange={e => set('pubActivo', e.target.checked)} /> Publicar al aprobar un video
+            </label>
+            <div className="form-group">
+              <label className="form-label">Agente que prepara las publicaciones</label>
+              <select className="form-select" value={form.pubPublicador} onChange={e => set('pubPublicador', e.target.value)}>
+                <option value="">— Elige un agente (rol Publicación en redes) —</option>
+                {agents.filter(a => a.active !== false).map(a => <option key={a.id} value={a.id}>{a.name}{a.rol === 'publicador' ? '' : ' (otro rol)'}</option>)}
+              </select>
+            </div>
+            <CuentasRedes form={form} set={set} showToast={showToast} userEmail={userEmail} />
+            <h4 style={{ margin: '12px 0 0', fontSize: 14 }}>Decisiones del creador</h4>
+            <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0 }}>YouTube y TikTok exigen que esto lo elijas tú; el agente solo lo copia.</p>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Privacidad en YouTube</label>
+                <select className="form-select" value={form.pubYtPrivacidad} onChange={e => set('pubYtPrivacidad', e.target.value)}>
+                  <option value="private">Privado</option><option value="unlisted">No listado</option><option value="public">Público</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Quién ve en TikTok</label>
+                <select className="form-select" value={form.pubTtPrivacidad} onChange={e => set('pubTtPrivacidad', e.target.value)}>
+                  <option value="SELF_ONLY">Solo yo</option><option value="MUTUAL_FOLLOW_FRIENDS">Amigos</option>
+                  <option value="FOLLOWER_OF_CREATOR">Seguidores</option><option value="PUBLIC_TO_EVERYONE">Todos</option>
+                </select>
+              </div>
+            </div>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <input type="checkbox" checked={form.pubTtComentarios} onChange={e => set('pubTtComentarios', e.target.checked)} /> Permitir comentarios en TikTok
+            </label>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <input type="checkbox" checked={form.pubTtMusica} onChange={e => set('pubTtMusica', e.target.checked)} /> Acepto la Confirmación de uso de música de TikTok
+            </label>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <input type="checkbox" checked={form.pubIA} onChange={e => set('pubIA', e.target.checked)} /> Marcar como contenido generado con IA
+            </label>
           </>}
 
           {tab === 'geo' && <>

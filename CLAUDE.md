@@ -207,6 +207,15 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   antes de iniciar sesión; si otro motor vivo lo tiene, sale con código 3 y `iniciar-agentes.sh/.bat` dejan de reintentar.
   Un candado de un proceso muerto o con el mismo PID (Docker) se reemplaza. Para reiniciar en tmux usa
   `tmux send-keys -t motor C-c` (matar la sesión deja vivos el `sg` y el motor).
+- Publicación en redes (vidIQ): `motor/publicacion.mjs` (con pruebas). Ficha → Publicación guarda `clients.publicacion
+  {activo, publicadorId, cuentas.{YOUTUBE|TIKTOK|FACEBOOK_PAGES|INSTAGRAM}.platformAccountId, ajustes}`. Al aprobar
+  (`driveSync: 'pendiente'`) `despuesDeAprobar` → `encolarPublicacion`: si `<Cliente>/Aprobados/<tarea>/` trae finales
+  `*_short|youtube_vN.mp4`, crea la tarea "Publicar: …" para el rol `publicador` (grupo `publicar_redes`, solo Claude).
+  El agente sube con `subir_video_vidiq` (media-server; solo la carpeta de `AGENTES_PUBLICAR_DIR` y solo al enlace
+  firmado de vidIQ, sin ejecutar el comando que devuelve vidIQ), crea el BORRADOR y deja `salida/publicacion.json`.
+  Al aprobar esa tarea, `publicarAprobada` corre Claude solo con `vidiq_social_post_publish`/`post_status` (permiso
+  sembrado en `permisosPorTarea`). Fuente de verdad: `logs/publicaciones.json` (no el campo `publicacion` del doc).
+  Las herramientas de publicar de vidIQ están en `accionesConAprobacion`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
