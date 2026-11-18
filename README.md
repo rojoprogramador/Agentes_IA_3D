@@ -312,6 +312,12 @@ limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-regist
 al abrir una sesión nueva: cierra la terminal (o `wsl --shutdown` desde Windows) antes de encender el motor. La
 primera vez cada herramienta descarga su imagen y Trivy su base (~130 MB, queda en `motor/logs/cache-trivy`).
 
+### GEO: ¿las IA recomiendan a tus clientes?
+
+En la ficha del cliente → **GEO** escribe las preguntas que haría un cliente real ("¿qué plomero recomiendas en
+Cali?"), sus competidores y elige hasta 3 modelos (Agencia → Modelos de IA). Cada semana el motor pregunta y registra si
+las IA citan la marca, en qué lugar y a quién nombran; también puedes pulsar **Medir ahora**.
+
 ### Alertas de caída (Uptime Kuma + DevOps)
 
 Activa **Agencia → Motor → Alertas de caída** y pega la URL que te muestra en Uptime Kuma → Notificaciones → Webhook.

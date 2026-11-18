@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import MemoriaEditor from './MemoriaEditor.jsx'
+import GeoCliente from './GeoCliente.jsx'
+import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
 import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import Icon from './Icons.jsx'
@@ -12,6 +14,7 @@ const TABS = [
   { id: 'activos', label: 'Activos' },
   { id: 'analitica', label: 'Analítica y anuncios' },
   { id: 'email', label: 'Email' },
+  { id: 'geo', label: 'GEO' },
   { id: 'alcance', label: 'Alcance' },
   { id: 'aprendizajes', label: 'Aprendizajes' },
 ]
@@ -20,6 +23,7 @@ const TABS = [
 export default function ClientProfile({ client, departments, onClose, onRenamed, showToast, userEmail }) {
   const base = emptyClient(client?.nombre || '')
   const c = client || {}
+  const { providers = [] } = useApp() || {}
   const [tab, setTab] = useState('negocio')
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
@@ -66,6 +70,8 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     topeAds: c.ads?.topeMensual ? String(c.ads.topeMensual) : '',
     credGads: '', tokenMeta: '',
     listasEmail: (c.email?.listas || []).join(', '),
+    geoActivo: c.geo?.activo === true, geoMarca: c.geo?.marca || c.nombre || '', geoAlias: toLines(c.geo?.alias), geoDominio: c.geo?.dominio || c.activos?.web || '',
+    geoCompetidores: toLines(c.geo?.competidores), geoPrompts: toLines(c.geo?.prompts), geoProveedores: c.geo?.proveedores || [],
   })
   // Estado de la credencial de Google (lo publica el motor: solo el correo, nunca la clave)
   const [estadoGoogle, setEstadoGoogle] = useState(null)
@@ -132,6 +138,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
       aprendizajes: form.aprendizajes,
       analitica: { ga4PropertyId: ga4, gscSitio: gsc },
       ads: { googleAdsCustomerId: gadsCid, metaAdAccountId: metaCuenta, topeMensual: topeAds },
+      geo: { activo: form.geoActivo, marca: form.geoMarca.trim(), alias: fromLines(form.geoAlias), dominio: form.geoDominio.trim(), competidores: fromLines(form.geoCompetidores).slice(0, 15), prompts: fromLines(form.geoPrompts).slice(0, 10), proveedores: form.geoProveedores.slice(0, 3) },
       email: { listas: [...new Set(form.listasEmail.split(/[\s,]+/).map(Number).filter(n => Number.isInteger(n) && n > 0))] },
       updatedAt: serverTimestamp(), updatedBy: userEmail,
     }
@@ -294,6 +301,37 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
               y agrégalo al agente en Herramientas extra.
             </p>
             {field('IDs de listas de Listmonk', 'listasEmail', { placeholder: '3, 7', hint: 'Los ves en Listmonk → Listas (columna ID).' })}
+          </>}
+
+          {tab === 'geo' && <>
+            <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: 0 }}>
+              ¿Las IA recomiendan a este cliente? Cada semana el motor hace estas preguntas a los modelos elegidos (como lo
+              haría cualquier persona, sin contarles quién es el cliente) y registra si lo citan, en qué lugar y qué competidores
+              nombran. Máximo 10 preguntas y 3 modelos.
+            </p>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <input type="checkbox" checked={form.geoActivo} onChange={e => set('geoActivo', e.target.checked)} /> Medir cada semana
+            </label>
+            <div className="form-row">
+              {field('Marca', 'geoMarca')}
+              {field('Dominio', 'geoDominio', { placeholder: 'ejemplo.com' })}
+            </div>
+            <div className="form-row">
+              {field('Otros nombres de la marca', 'geoAlias', { area: true, rows: 2, hint: 'Uno por línea.' })}
+              {field('Competidores', 'geoCompetidores', { area: true, rows: 2, hint: 'Uno por línea.' })}
+            </div>
+            {field('Preguntas', 'geoPrompts', { area: true, rows: 4, placeholder: '¿Qué empresa de plomería recomiendas en Cali?\n¿Quién detecta fugas de agua sin romper en Cali?', hint: 'Una por línea, como las haría un cliente real.' })}
+            <div className="form-group">
+              <label className="form-label">Modelos (Agencia → Modelos de IA)</label>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 13 }}>
+                {providers.filter(p => p.activo !== false).map(p => (
+                  <label key={p.id}><input type="checkbox" checked={form.geoProveedores.includes(p.id)} disabled={!form.geoProveedores.includes(p.id) && form.geoProveedores.length >= 3}
+                    onChange={() => set('geoProveedores', form.geoProveedores.includes(p.id) ? form.geoProveedores.filter(x => x !== p.id) : [...form.geoProveedores, p.id])} /> {p.nombre}{p.gratis ? ' (gratis)' : ''}</label>
+                ))}
+                {!providers.length && <span style={{ color: 'var(--text-3)' }}>Agrega proveedores en Agencia → Modelos de IA.</span>}
+              </div>
+            </div>
+            <GeoCliente clienteId={c.id} configurado={!!(c.geo?.marca && c.geo?.prompts?.length && c.geo?.proveedores?.length)} />
           </>}
 
           {tab === 'alcance' && <>

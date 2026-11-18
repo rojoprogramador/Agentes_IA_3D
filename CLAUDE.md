@@ -170,6 +170,10 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `otrasRutas`) atiende también `POST /alertas/kuma/<token>` (`logs/alertas-token.txt`); `atenderAlerta`: una tarea por
   incidente al rol `devops` (`logs/alertas-abiertas.json`), Telegram al caer y al volver. `diagnostico_sitio` en
   `auditoria-server.mjs`. Ajuste `config/motor.alertas.activo`.
+- GEO (C4): `motor/geo.mjs` (puro con pruebas: `configGeo`, `analizarRespuesta`, `resumenGeo`, `mensajesGeo` sin contexto
+  del cliente). Worker `correrGeo` (proveedores de `clients.geo.proveedores`, respeta `permiteModelosGratis`),
+  `revisarGeo` semanal (`logs/geo-estado.json`), `geoPedidos` para medir desde el panel. Resultados en
+  `geoResultados/{clienteId}/items`. Panel: ficha → GEO (`GeoCliente.jsx`, importa `motor/geo.mjs`).
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
