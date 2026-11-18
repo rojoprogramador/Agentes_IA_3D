@@ -100,9 +100,13 @@ export default function AgentModal({ agent, nextOrder, onClose, showToast, userE
   const rolModelo = CATALOGO.roles[form.rol]?.modelo
   const requiereHerramientas = !!rolModelo?.requiereHerramientas
   const provSel = providers.find(p => p.id === form.proveedor)
-  // Roles con herramientas de servidores MCP (video, imágenes, Gmail, Drive…) solo funcionan con Claude Code
-  const GRUPOS_MCP = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_lectura', 'drive_crear']
-  const soloClaude = (CATALOGO.roles[form.rol]?.herramientas || []).some(g => GRUPOS_MCP.includes(g) && g !== 'drive_lectura')
+  // Roles con herramientas de servidores MCP: Gmail, calendario y Drive solo los tiene Claude Code.
+  // Video y entregas (herramientas del motor) e imágenes (su propio generador) también funcionan con Antigravity.
+  const GRUPOS_MCP = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear']
+  const GRUPOS_ANTIGRAVITY = ['entregas', 'editor_video', 'magnific_imagenes']
+  const gruposMcp = (CATALOGO.roles[form.rol]?.herramientas || []).filter(g => GRUPOS_MCP.includes(g))
+  const soloClaude = gruposMcp.some(g => !GRUPOS_ANTIGRAVITY.includes(g))
+  const soloClaudeOAntigravity = !soloClaude && gruposMcp.length > 0
   const esCli = ['codex', 'gemini', 'antigravity'].includes(form.proveedor)
   const motorSel = motoresPC[form.proveedor]
 
@@ -121,6 +125,7 @@ export default function AgentModal({ agent, nextOrder, onClose, showToast, userE
       presupuesto: { maxTurnos: Number(form.maxTurnos) || null },
       clientesPermitidos: form.todosClientes ? 'todos' : form.clientesPermitidos,
       modelo: form.proveedor === 'claude' || (esCli && soloClaude) || (!esCli && requiereHerramientas)
+        || (soloClaudeOAntigravity && form.proveedor !== 'antigravity')
         ? { proveedor: 'claude' }
         : form.proveedor === 'antigravity' ? { proveedor: 'antigravity', nombre: form.modeloNombre.trim() }
         : esCli ? { proveedor: form.proveedor }
@@ -265,10 +270,10 @@ export default function AgentModal({ agent, nextOrder, onClose, showToast, userE
                 <optgroup label="Agentes con herramientas">
                   <option value="claude">Claude Code</option>
                   <option value="antigravity">Antigravity · Google AI Pro</option>
-                  <option value="codex">Codex · cuenta de ChatGPT</option>
-                  <option value="gemini">Gemini CLI · clave de API</option>
+                  <option value="codex" disabled={soloClaudeOAntigravity}>Codex · cuenta de ChatGPT</option>
+                  <option value="gemini" disabled={soloClaudeOAntigravity}>Gemini CLI · clave de API</option>
                 </optgroup>
-                {!requiereHerramientas && providers.some(p => p.activo !== false) && (
+                {!requiereHerramientas && !soloClaudeOAntigravity && providers.some(p => p.activo !== false) && (
                   <optgroup label="Solo texto (API)">
                     {providers.filter(p => p.activo !== false).map(p => <option key={p.id} value={p.id}>{p.nombre}{p.gratis ? ' · gratis' : ''}</option>)}
                   </optgroup>
@@ -289,7 +294,13 @@ export default function AgentModal({ agent, nextOrder, onClose, showToast, userE
               )}
             </div>
             {soloClaude && (
-              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Este rol usa herramientas que solo tiene Claude Code (video, imágenes, correo o Drive).</span>
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Este rol usa herramientas que solo tiene Claude Code (correo, calendario o crear en Drive).</span>
+            )}
+            {soloClaudeOAntigravity && (
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                Este rol puede trabajar con Claude Code o con Antigravity: con Antigravity usa las herramientas de video del motor y,
+                para imágenes, su propio generador en vez de Magnific. Si Claude está en reserva, sus tareas pasan solas a Antigravity.
+              </span>
             )}
             {!soloClaude && esCli && (
               <span style={{ fontSize: 11, color: motorSel?.conectado ? 'var(--success)' : 'var(--danger)' }}>
