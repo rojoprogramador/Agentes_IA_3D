@@ -6,6 +6,7 @@ import { logWork } from '../utils/worklog.js'
 import { dueInfo, duplicateTask, wipLimitReached, WIP_LIMIT } from './KanbanView.jsx'
 import Icon from '../components/Icons.jsx'
 import { esDeDepartamento } from '../agencia.js'
+import { confirmar } from '../components/Confirmar.jsx'
 
 function fmtDate(ts) {
   if (!ts) return '—'
@@ -18,6 +19,7 @@ function fmtDuration(seconds) {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   if (h > 0) return `${h}h ${m}m`
+  if (m === 0) return `${Math.round(seconds)} s`
   return `${m}m`
 }
 
@@ -137,23 +139,25 @@ export default function TasksView() {
 
   const handleDelete = async (task) => {
     if (!isAdmin) return
-    if (!confirm(`¿Eliminar "${task.tarea}"?`)) return
+    if (!(await confirmar(`¿Eliminar "${task.tarea}"? Esta acción no se puede deshacer.`, { titulo: 'Eliminar tarea', boton: 'Eliminar' }))) return
     await deleteDoc(doc(db, 'tasks', task.id))
     showToast('Tarea eliminada', 'info')
   }
 
   // CSV Export
   const exportCSV = () => {
-    const headers = ['Tarea','Descripción','Asignado','Cliente','Prioridad','Estado','Inicio','Entrega','Duración (hrs)','Creado por']
+    const headers = ['Tarea','Descripción','Asignado','Cliente','Prioridad','Estado','Inicio','Entrega','Duración (min)','Duración (hrs)','Motor','Creado por']
     const rows = filtered.map(t => {
       const u = getAssignee(t)
       const dur = t.totalTimeSeconds ? (t.totalTimeSeconds / 3600).toFixed(2) : ''
+      const min = t.totalTimeSeconds ? (t.totalTimeSeconds / 60).toFixed(1) : ''
       return [
         t.tarea, t.descripcion, u?.name || t.asignado, t.cliente,
         t.prioridad, t.estado,
         fmtDate(t.fechaInicio), fmtDate(t.fechaEntrega),
-        dur, t.createdBy
-      ].map(v => `"${(v || '').toString().replace(/"/g, '""')}"`).join(',')
+        min, dur, t.agentMotor || '', t.createdBy
+      // Un texto que empieza con = + - @ se ejecutaría como fórmula al abrir el CSV en Excel: se antepone '
+      ].map(v => { const x = (v ?? '').toString(); return `"${(/^[=+\-@\t\r]/.test(x) ? "'" + x : x).replace(/"/g, '""')}"` }).join(',')
     })
     const csv = [headers.join(','), ...rows].join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -200,6 +204,7 @@ export default function TasksView() {
               Todas
             </button>
           </div>
+          <button className="btn btn-secondary btn-sm" onClick={exportCSV} disabled={!filtered.length} title="Descarga las tareas filtradas">Exportar CSV</button>
           <button className="btn btn-primary btn-sm" onClick={openNewTask}>+ Nueva tarea</button>
         </div>
       </div>
@@ -394,7 +399,7 @@ export default function TasksView() {
                           onClick={async () => {
                             try {
                               await duplicateTask(task, user.email)
-                              showToast(`Tarea duplicada: "${task.tarea} (copia)"`)
+                              showToast(`Tarea duplicada: "${String(task.tarea || '').replace(/\s+/g, ' ').trim()} (copia)"`)
                             } catch (e) { showToast('No se pudo duplicar', 'error') }
                           }}
                           title="Duplicar como plantilla"

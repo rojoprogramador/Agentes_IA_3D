@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
 import { collection, doc, onSnapshot, query, updateDoc, where, serverTimestamp } from 'firebase/firestore'
+import { confirmar } from './Confirmar.jsx'
 
 // Acciones con efecto externo que esperan permiso (fase B4). Un agente quiere enviar, publicar o gastar
 // (correo, calendario, Drive, créditos de Magnific) y el motor lo detuvo hasta que un admin decida aquí o en
@@ -51,7 +52,7 @@ export default function AprobacionesPendientes() {
             <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <button className="btn btn-primary btn-sm" onClick={() => decidir(a, 'aprobada', 'una')}>Aprobar una vez</button>
               <button className="btn btn-secondary btn-sm" onClick={() => decidir(a, 'aprobada', 'tarea')} title="No vuelve a preguntar por esta acción en esta tarea">Toda esta tarea</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm(`¿Permitir "${a.accion}" SIEMPRE, en todas las tareas, sin preguntar? Lo puedes quitar en Agencia → Motor.`)) decidir(a, 'aprobada', 'siempre') }}>Siempre</button>
+              <button className="btn btn-ghost btn-sm" onClick={async () => { if (await confirmar(`¿Permitir "${a.accion}" SIEMPRE, en todas las tareas, sin preguntar? Lo puedes quitar en Agencia → Motor.`, { titulo: 'Permitir siempre', boton: 'Permitir siempre' })) decidir(a, 'aprobada', 'siempre') }}>Siempre</button>
               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', marginLeft: 'auto' }} onClick={() => decidir(a, 'denegada')}>Denegar</button>
             </div>
           </div>

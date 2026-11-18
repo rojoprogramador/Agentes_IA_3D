@@ -84,3 +84,26 @@ test('salas por cliente: participantes y quién responde', async () => {
   assert.deepEqual(quienResponde([ag[2]], todos, ag[0]).map(a => a.id), ['copy'], 'un mencionado fuera de la sala no responde')
   assert.deepEqual(quienResponde([], todos, null).map(a => a.id), ['copy'])
 })
+
+test('idioma: es-CO por defecto con equivalencias; código desconocido cae a es-CO', async () => {
+  const { reglaIdioma } = await import('./agencia.mjs')
+  const r = reglaIdioma(undefined)
+  assert.match(r, /español de Colombia \(es-CO\)/)
+  assert.match(r, /"costes" → "costos"/)
+  assert.match(r, /plomería/)
+  assert.match(reglaIdioma('xx-YY'), /es-CO/)
+  assert.match(reglaIdioma('es-ES'), /España/)
+  assert.doesNotMatch(reglaIdioma('es-ES'), /No uses/)
+})
+
+test('rutas locales: file:// y rutas del PC quedan relativas', async () => {
+  const { limpiarRutasLocales } = await import('./agencia.mjs')
+  const raices = ['/home/u/proyectos/App/motor', '/home/u/proyectos/App', '/home/u']
+  assert.equal(limpiarRutasLocales('Ver file:///home/u/proyectos/App/motor/trabajos/abc/salida/copies-destape.md listo', raices),
+    'Ver salida/copies-destape.md listo')
+  assert.equal(limpiarRutasLocales('[Copies](file:///home/u/proyectos/App/motor/trabajos/abc/salida/c.md)', raices), '`Copies`')
+  assert.equal(limpiarRutasLocales('en /home/u/proyectos/App/motor/trabajos/abc/salida/a%20b.pdf', raices), 'en salida/a b.pdf')
+  assert.equal(limpiarRutasLocales('guardé /home/u/Descargas/x.png', raices), 'guardé x.png')
+  assert.equal(limpiarRutasLocales('https://drive.google.com/file/d/1/view', raices), 'https://drive.google.com/file/d/1/view')
+  assert.doesNotMatch(limpiarRutasLocales('file:///home/u/proyectos/App/motor/trabajos/abc/salida/z.md', raices), /home/)
+})

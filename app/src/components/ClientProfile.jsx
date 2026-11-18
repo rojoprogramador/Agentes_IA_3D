@@ -6,6 +6,8 @@ import { db } from '../firebase.js'
 import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import Icon from './Icons.jsx'
 import { emptyClient, slugify, toLines, fromLines } from '../agencia.js'
+import { IDIOMAS_DISPONIBLES, IDIOMA_POR_DEFECTO } from '../../../motor/agencia.mjs'
+import { confirmar } from './Confirmar.jsx'
 
 const TABS = [
   { id: 'negocio', label: 'Negocio' },
@@ -31,6 +33,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     activo: c.activo !== false,
     interno: !!c.interno,
     permiteModelosGratis: c.permiteModelosGratis === true,
+    idioma: c.idioma || IDIOMA_POR_DEFECTO,
     departamentos: c.departamentos || [],
     descripcion: c.negocio?.descripcion || '',
     servicios: toLines(c.negocio?.servicios),
@@ -126,6 +129,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
     const data = {
       ...base, ...c,
       nombre, slug: slugify(nombre), activo: form.activo, interno: form.interno, permiteModelosGratis: form.permiteModelosGratis,
+      idioma: form.idioma || IDIOMA_POR_DEFECTO,
       departamentos: form.departamentos,
       negocio: { descripcion: form.descripcion.trim(), servicios: fromLines(form.servicios), zona: form.zona.trim(), publico: form.publico.trim() },
       marca: {
@@ -216,6 +220,13 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
                 </label>
               </div>
             </div>
+            <div className="form-group">
+              <label className="form-label">Idioma de las entregas</label>
+              <select className="form-select" value={form.idioma} onChange={e => set('idioma', e.target.value)}>
+                {IDIOMAS_DISPONIBLES.map(i => <option key={i.codigo} value={i.codigo}>{i.nombre} ({i.codigo})</option>)}
+              </select>
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Los agentes escriben en esta variante (por ejemplo "plomería" y "costos" en Colombia).</span>
+            </div>
             {field('A qué se dedica', 'descripcion', { area: true, placeholder: 'Qué vende, cómo trabaja, qué lo diferencia…' })}
             {field('Servicios o productos', 'servicios', { area: true, hint: 'Uno por línea.' })}
             <div className="form-row">
@@ -292,7 +303,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
             {field('Credencial propia del cliente (opcional)', 'credencialGoogle', { area: true, rows: 3, placeholder: 'Pega el JSON de la cuenta de servicio (solo si el cliente usa la suya)', hint: 'Se guarda aparte y no se vuelve a mostrar.' })}
             {estadoGoogle?.clientes?.[c.id] && (
               <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', alignSelf: 'flex-start' }}
-                onClick={async () => { if (!confirm('¿Quitar la credencial propia de este cliente? Se usará la de la agencia.')) return; try { await deleteDoc(doc(db, 'secretos', `cliente_${c.id}_google`)); showToast('Credencial quitada', 'info') } catch { showToast('No se pudo quitar', 'error') } }}>
+                onClick={async () => { if (!(await confirmar('¿Quitar la credencial propia de este cliente? Se usará la de la agencia.'))) return; try { await deleteDoc(doc(db, 'secretos', `cliente_${c.id}_google`)); showToast('Credencial quitada', 'info') } catch { showToast('No se pudo quitar', 'error') } }}>
                 Quitar credencial propia
               </button>
             )}

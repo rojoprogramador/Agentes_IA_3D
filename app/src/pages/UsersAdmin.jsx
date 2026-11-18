@@ -4,6 +4,7 @@ import { useApp, SUPER_ADMIN_EMAIL } from '../App.jsx'
 import { db } from '../firebase.js'
 import { doc, updateDoc, deleteDoc, setDoc, getDocs, collection, writeBatch, onSnapshot } from 'firebase/firestore'
 import { useEffect } from 'react'
+import { confirmar } from '../components/Confirmar.jsx'
 
 export default function UsersAdmin() {
   const { users, tasks, user, showToast, isSuperAdmin } = useApp()
@@ -57,7 +58,7 @@ export default function UsersAdmin() {
   }
 
   const handleReject = async (u) => {
-    if (!confirm(`¿Rechazar y eliminar la cuenta de ${u.name}?`)) return
+    if (!(await confirmar(`¿Rechazar y eliminar la cuenta de ${u.name}?`, { boton: 'Rechazar' }))) return
     setSaving(u.uid)
     await deleteDoc(doc(db, 'users', u.uid))
     setSaving(null)
@@ -66,7 +67,7 @@ export default function UsersAdmin() {
 
   const handleDelete = async (u) => {
     if (u.email === SUPER_ADMIN_EMAIL) { showToast('No puedes eliminar al super admin', 'error'); return }
-    if (!confirm(`¿Eliminar a ${u.name} del sistema? Sus tareas quedarán sin asignar y NO podrá volver a entrar sin tu aprobación.`)) return
+    if (!(await confirmar(`¿Eliminar a ${u.name} del sistema? Sus tareas quedarán sin asignar y NO podrá volver a entrar sin tu aprobación.`, { boton: 'Eliminar' }))) return
     setSaving(u.uid)
     await deleteDoc(doc(db, 'users', u.uid))
     // Borrar también su invitación (si existía): garantiza que si vuelve a
@@ -81,8 +82,8 @@ export default function UsersAdmin() {
   // RESET TOTAL: borra todas las tareas y todos los usuarios excepto el super admin
   const handleResetPlatform = async () => {
     if (!isSuperAdmin) return
-    if (!confirm('⚠️ RESET TOTAL: se eliminarán TODAS las tareas y TODOS los usuarios (excepto tu cuenta). ¿Continuar?')) return
-    if (!confirm('Última confirmación: esta acción NO se puede deshacer. ¿Seguro?')) return
+    if (!(await confirmar('Se eliminarán TODAS las tareas y TODOS los usuarios (excepto tu cuenta).', { titulo: 'Reset total', boton: 'Continuar' }))) return
+    if (!(await confirmar('Esta acción NO se puede deshacer. ¿Seguro?', { titulo: 'Última confirmación', boton: 'Borrar todo' }))) return
     setSaving('reset')
     try {
       // Borrar tareas

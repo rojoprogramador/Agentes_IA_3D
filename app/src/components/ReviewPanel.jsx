@@ -3,6 +3,7 @@ import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
 import { doc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore'
 import { agregarEntrada, LIMITES_MEMORIA } from '../../../motor/memoria.mjs'
+import { confirmar } from './Confirmar.jsx'
 
 // Revisión de una entrega de agente: brief vs entrega, notas del agente revisor, versiones
 // y las decisiones del equipo (Aprobar / Corregir / Rechazar). Las correcciones pueden quedar
@@ -43,7 +44,7 @@ export default function ReviewPanel({ task, onDone }) {
   const puedeDetener = isAdmin || task.createdBy === user?.email
   const trabajando = ['running', 'reviewing', 'queued'].includes(status) && task.estado !== 'completada'
   const detener = async () => {
-    if (!confirm('¿Detener esta tarea? El agente deja de trabajar ahora y lo que alcanzó a hacer queda guardado.')) return
+    if (!(await confirmar('El agente deja de trabajar ahora y lo que alcanzó a hacer queda guardado.', { titulo: 'Detener tarea', boton: 'Detener' }))) return
     setBusy(true)
     try {
       await updateDoc(doc(db, 'tasks', task.id), { cancelar: true, cancelarPor: userProfile?.name || user.email, lastEditedBy: user.email, lastEditedAt: serverTimestamp() })

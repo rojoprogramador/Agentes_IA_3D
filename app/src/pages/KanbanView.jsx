@@ -6,6 +6,7 @@ import { logWork } from '../utils/worklog.js'
 import Icon from '../components/Icons.jsx'
 import { esDeDepartamento } from '../agencia.js'
 import PropuestasAprendizaje from '../components/PropuestasAprendizaje.jsx'
+import { confirmar } from '../components/Confirmar.jsx'
 
 const COLUMNS = [
   { id: 'pendiente',   label: 'Pendiente',    icon: 'hourglass', color: 'var(--text-3)' },
@@ -33,7 +34,7 @@ export function wipLimitReached(allTasks, uid, excludeTaskId = null) {
 // resetea la ejecución (estado, timer, calificación, marcas)
 export async function duplicateTask(task, byEmail) {
   const copy = {
-    tarea: `${task.tarea} (copia)`,
+    tarea: `${String(task.tarea || '').replace(/\s+/g, ' ').trim()} (copia)`,
     descripcion: task.descripcion || '',
     asignado: task.asignado || '',
     cliente: task.cliente || '',
@@ -143,6 +144,7 @@ function fmtDuration(seconds) {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   if (h > 0) return `${h}h ${m}m`
+  if (m === 0) return `${Math.round(seconds)} s`
   return `${m}m`
 }
 
@@ -300,7 +302,7 @@ export default function KanbanView() {
 
   const handleDelete = async (task) => {
     if (!isAdmin) return
-    if (!confirm(`¿Eliminar "${task.tarea}"? Esta acción no se puede deshacer.`)) return
+    if (!(await confirmar(`¿Eliminar "${task.tarea}"? Esta acción no se puede deshacer.`, { titulo: 'Eliminar tarea', boton: 'Eliminar' }))) return
     await deleteDoc(doc(db, 'tasks', task.id))
     showToast('Tarea eliminada', 'info')
   }
@@ -324,7 +326,7 @@ export default function KanbanView() {
   const handleDuplicate = async (task) => {
     try {
       await duplicateTask(task, user.email)
-      showToast(`Tarea duplicada: "${task.tarea} (copia)" quedó en Pendiente`)
+      showToast(`Tarea duplicada: "${String(task.tarea || '').replace(/\s+/g, ' ').trim()} (copia)" quedó en Pendiente`)
     } catch (e) {
       console.error(e)
       showToast('No se pudo duplicar la tarea', 'error')
@@ -368,7 +370,7 @@ export default function KanbanView() {
           <p className="page-subtitle">
             {isAdmin
               ? 'Arrastra cualquier tarea entre columnas para cambiar su estado'
-              : 'Arrastra tus tareas entre columnas · Puedes ver las tareas de todos'}
+              : 'Arrastra tus tareas entre columnas · Con el filtro ves también las del resto del equipo'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

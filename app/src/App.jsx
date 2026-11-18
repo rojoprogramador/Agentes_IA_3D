@@ -32,6 +32,7 @@ import { SUPER_ADMIN_EMAIL, BRAND } from './config.js'
 export { SUPER_ADMIN_EMAIL }
 // Versión leída del package.json — se actualiza sola en cada build
 import pkg from '../package.json'
+import ConfirmarHost from './components/Confirmar.jsx'
 export const APP_VERSION = pkg.version
 
 const RANDOM_COLORS = [
@@ -382,6 +383,7 @@ export default function App() {
 
         {taskFormOpen && <TaskForm />}
       </div>
+      <ConfirmarHost />
     </AppContext.Provider>
   )
 }

@@ -10,6 +10,7 @@ import AgentChat from '../components/AgentChat.jsx'
 import { userLook } from '../components/LookEditor.jsx'
 import { BRAND, SUPER_ADMIN_EMAIL } from '../config.js'
 import { wipLimitReached, WIP_LIMIT } from './KanbanView.jsx'
+import { confirmar } from '../components/Confirmar.jsx'
 
 const ONLINE_MS = 5 * 60 * 1000
 // El coordinador (asistente personal) tiene escritorio propio y reparte el trabajo
@@ -245,7 +246,7 @@ export default function OfficeView() {
   }
 
   const deleteAgent = async (agent) => {
-    if (!confirm(`¿Eliminar al agente "${agent.name}"? Sus tareas quedarán sin asignar.`)) return
+    if (!(await confirmar(`¿Eliminar al agente "${agent.name}"? Sus tareas quedarán sin asignar.`))) return
     await deleteDoc(doc(db, 'agents', agent.id))
     setSelectedId(null)
     showToast('Agente eliminado', 'info')

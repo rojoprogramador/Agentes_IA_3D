@@ -12,6 +12,7 @@ import PermisosPicker from '../components/PermisosPicker.jsx'
 import MedidorClaude from '../components/MedidorClaude.jsx'
 import CATALOGO from '../../../roles/catalogo.json'
 import { DEFAULT_DEPARTMENTS, EXAMPLE_TASK_TYPES, FIELD_TYPES, DELIVERY_FORMATS, PROVIDER_PRESETS, slugify, toLines, fromLines } from '../agencia.js'
+import { confirmar } from '../components/Confirmar.jsx'
 
 // Agencia: departamentos y tipos de tarea (plantillas de brief con su checklist y su revisor)
 export default function AgenciaAdmin() {
@@ -183,7 +184,7 @@ function DeptModal({ dept, onClose, showToast }) {
     onClose()
   }
   const remove = async () => {
-    if (!confirm(`¿Eliminar "${dept.nombre}"? Las tareas y agentes que lo usan quedan sin departamento.`)) return
+    if (!(await confirmar(`¿Eliminar "${dept.nombre}"? Las tareas y agentes que lo usan quedan sin departamento.`))) return
     await deleteDoc(doc(db, 'departments', dept.id))
     onClose()
   }
@@ -257,7 +258,7 @@ function TypeModal({ type, departments, onClose, showToast }) {
     onClose()
   }
   const remove = async () => {
-    if (!confirm(`¿Eliminar el tipo "${type.nombre}"? Las tareas ya creadas no cambian.`)) return
+    if (!(await confirmar(`¿Eliminar el tipo "${type.nombre}"? Las tareas ya creadas no cambian.`))) return
     await deleteDoc(doc(db, 'taskTypes', type.id))
     onClose()
   }
@@ -379,7 +380,7 @@ function ProviderModal({ prov, onClose, showToast }) {
     }
   }
   const remove = async () => {
-    if (!confirm(`¿Quitar ${prov.nombre}? Los agentes que lo usan vuelven a Claude Code.`)) return
+    if (!(await confirmar(`¿Quitar ${prov.nombre}? Los agentes que lo usan vuelven a Claude Code.`))) return
     await deleteDoc(doc(db, 'providerSecrets', prov.id)).catch(() => {})
     await deleteDoc(doc(db, 'providers', prov.id))
     onClose()

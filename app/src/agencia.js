@@ -160,7 +160,7 @@ export const DELIVERY_FORMATS = [
 
 // Ficha vacía de un cliente
 export const emptyClient = (nombre = '') => ({
-  nombre, slug: slugify(nombre), activo: true, interno: false, orden: 0,
+  nombre, slug: slugify(nombre), activo: true, interno: false, orden: 0, idioma: 'es-CO',
   negocio: { descripcion: '', servicios: [], zona: '', publico: '' },
   marca: { tono: '', colores: [], logoUrl: '', palabrasSi: [], palabrasNo: [] },
   objetivos: [],

@@ -25,6 +25,47 @@ export function clientContext(c) {
   ].filter(Boolean).join('\n')
 }
 
+// ---------- Idioma y variante (QA 5) ----------
+// Cada cliente puede tener `idioma` (por defecto es-CO). La regla va en el prompt de tareas y chats, con las
+// equivalencias que más se escapan cuando el modelo escribe en español de España.
+export const IDIOMA_POR_DEFECTO = 'es-CO'
+const IDIOMAS = {
+  'es-CO': { nombre: 'español de Colombia', evitar: [['fontanería / fontanero', 'plomería / plomero'], ['costes', 'costos'], ['atasco (de tubería)', 'taponamiento / destapar'], ['móvil', 'celular'], ['ordenador', 'computador'], ['vosotros', 'ustedes'], ['coche', 'carro'], ['piso (vivienda)', 'apartamento']] },
+  'es-MX': { nombre: 'español de México', evitar: [['fontanería', 'plomería'], ['costes', 'costos'], ['móvil', 'celular'], ['ordenador', 'computadora'], ['vosotros', 'ustedes'], ['coche', 'carro']] },
+  'es-ES': { nombre: 'español de España', evitar: [] },
+  'en-US': { nombre: 'inglés de Estados Unidos', evitar: [] },
+}
+export const IDIOMAS_DISPONIBLES = Object.entries(IDIOMAS).map(([codigo, v]) => ({ codigo, nombre: v.nombre }))
+export function reglaIdioma(codigo) {
+  const c = IDIOMAS[codigo] ? codigo : IDIOMA_POR_DEFECTO
+  const { nombre, evitar } = IDIOMAS[c]
+  return [`## Idioma\nEscribe todo en ${nombre} (${c}), con las palabras que usa la gente de ese país.`,
+    evitar.length ? `No uses → usa: ${evitar.map(([no, si]) => `"${no}" → "${si}"`).join('; ')}.` : ''].filter(Boolean).join('\n')
+}
+
+// ---------- Rutas locales en la entrega (QA 4) ----------
+// Algunos motores escriben en su respuesta links file:// o rutas absolutas del PC del motor. Nadie más puede
+// abrirlas y revelan la carpeta del PC: se dejan como nombre relativo (salida/archivo.pdf). Los links de Drive
+// quedan aparte, en entregaDrive.
+function rutaRelativa(p) {
+  let s = p
+  try { s = decodeURI(p) } catch { /* se deja como venía */ }
+  const m = s.match(/\/trabajos\/[^/]+\/(.+)$/)
+  return m ? m[1] : s.split('/').filter(Boolean).pop() || ''
+}
+export function limpiarRutasLocales(texto, raices = []) {
+  let s = String(texto || '')
+  // [nombre](file:///…) → `nombre` · file:///… suelto → `salida/archivo`
+  s = s.replace(/\[([^\]]*)\]\(file:\/\/[^)\s]*\)/g, (_, txt) => '`' + (txt || 'archivo') + '`')
+  s = s.replace(/<?file:\/\/(\/[^\s)\]>"'`]+)>?/g, (_, p) => rutaRelativa(p))
+  // Rutas absolutas del PC (carpeta del motor, del proyecto o el home)
+  for (const r of [...new Set(raices.filter(x => x && x.length > 1))].sort((a, b) => b.length - a.length)) {
+    const esc = r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\/+$/, '')
+    s = s.replace(new RegExp(esc + '(/[^\\s)\\]>"\'`]*)?', 'g'), (_, resto = '') => rutaRelativa(resto || '/'))
+  }
+  return s
+}
+
 // Criterios con los que se revisa la entrega: los de la tarea + el checklist del tipo
 export function criteriosDe(t, tipo) {
   return [...lista(t.brief?.criteriosAceptacion), ...lista(tipo?.checklist)]
