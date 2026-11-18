@@ -82,6 +82,14 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `clients.aprendizajes` (2.200) y `config/perfilDueno.entradas` (1.375). `agregarEntrada` falla si no cabe (hay que
   consolidar), `revisarEntrada` rechaza claves, Unicode invisible, inyección y enlaces de exfiltración, y
   `bloqueMemoria` arma el bloque del prompt con el uso. Editor: `MemoriaEditor.jsx`.
+- Historial buscable (`motor/historial.mjs`, con pruebas): SQLite de Node (`node:sqlite`) + FTS5 en
+  `motor/logs/historial.db`, tabla `mensajes(cliente_id, tarea_id, tarea, agente_id, rol, ts, texto, huella)` con
+  `huella` única (registrar es idempotente). El worker anota con `anotar(t, rol, texto)` (brief, entrega, revision,
+  correccion, pregunta, respuesta) y `llenarHistorial()` carga todas las tareas al arrancar. Herramienta MCP
+  `buscar_historial` (`media-server.mjs`, grupo `historial`, va en toda tarea): el cliente NO es parámetro, llega en
+  `AGENTES_CLIENTE` (y `AGENTES_TAREA` para excluirla) que `runClaude` y el plugin de Antigravity ponen al lanzar;
+  sin esa variable la herramienta se niega. Tareas sin cliente = `__interno__`. Las claves se redactan
+  (`CREDENCIAL` de `memoria.mjs`) y la consulta se reduce a palabras entre comillas (`consultaSegura`).
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
