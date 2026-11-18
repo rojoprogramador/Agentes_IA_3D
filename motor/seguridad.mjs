@@ -19,6 +19,11 @@ export const TIPOS = {
   vulnerabilidades: { herramienta: 'trivy',       objetivo: 'repo', vivo: false, red: true,  nombre: 'Dependencias, configuración (Docker, IaC) y secretos con Trivy' },
   tls:              { herramienta: 'testssl',     objetivo: 'host', vivo: true,  red: true,  nombre: 'Configuración TLS/SSL del dominio' },
   web_pasivo:       { herramienta: 'zap',         objetivo: 'url',  vivo: true,  red: true,  nombre: 'ZAP baseline: encabezados y configuración web (sin ataques)' },
+  // C5: ACTIVAS (envían tráfico de prueba al sistema). Exigen en el alcance: pruebasActivas, contacto de emergencia,
+  // límite de peticiones por segundo y ventana. Nada de denegación de servicio, fuerza bruta ni explotación.
+  puertos:              { herramienta: 'nmap',   objetivo: 'host', vivo: true, red: true, activo: true, nombre: 'Puertos y servicios expuestos (nmap, conexión TCP, 1000 puertos más comunes)' },
+  vulnerabilidades_web: { herramienta: 'nuclei', objetivo: 'url',  vivo: true, red: true, activo: true, nombre: 'Vulnerabilidades web conocidas con plantillas de nuclei (sin DoS ni fuerza bruta)' },
+  web_activo:           { herramienta: 'zap-full', objetivo: 'url', vivo: true, red: true, activo: true, nombre: 'ZAP escaneo activo (prueba inyecciones y XSS; más lento)' },
 }
 
 // Imágenes con versión fija: lo que se probó es lo que corre
@@ -29,6 +34,9 @@ export const IMAGENES = {
   trivy: 'aquasec/trivy:0.57.1',
   testssl: 'drwetter/testssl.sh:3.2',
   zap: 'ghcr.io/zaproxy/zaproxy:2.15.0',
+  'zap-full': 'ghcr.io/zaproxy/zaproxy:2.15.0',
+  nmap: 'instrumentisto/nmap:7.95',
+  nuclei: 'projectdiscovery/nuclei:v3.11.1',
 }
 
 const DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado']
@@ -54,6 +62,11 @@ export function alcanceVigente(a, tipo, ahora = Date.now(), zona = 'America/Bogo
   if (t.fecha < desde) return { ok: false, motivo: `La autorización empieza el ${desde}` }
   if (t.fecha > a.vigenciaHasta) return { ok: false, motivo: `La autorización venció el ${a.vigenciaHasta}: hay que firmar otra` }
   if ((Date.parse(a.vigenciaHasta) - Date.parse(desde)) / 86400000 > 90) return { ok: false, motivo: 'La vigencia no puede pasar de 90 días (así lo dice la plantilla)' }
+  if (TIPOS[tipo]?.activo) {
+    if (a.pruebasActivas !== true) return { ok: false, motivo: 'El alcance firmado no autoriza pruebas ACTIVAS (solo pasivas)' }
+    if (!String(a.contactoEmergencia || '').trim()) return { ok: false, motivo: 'Las pruebas activas exigen un contacto de emergencia en el alcance' }
+    if (!(Number(a.limiteRps) > 0)) return { ok: false, motivo: 'Las pruebas activas exigen un límite de peticiones por segundo en el alcance' }
+  }
   if (TIPOS[tipo]?.vivo) {
     const v = a.ventana || {}
     const dias = lista(v.dias).map(sinTilde)
@@ -115,7 +128,7 @@ export function objetivoEnAlcance(tipo, objetivo, a) {
 // ---------- Contenedor endurecido ----------
 // montajes: { src (repo, solo lectura), out (resultados) }. uid/gid: el del usuario del PC (no root), para que
 // los resultados queden con su dueño.
-export function argsDocker(tipo, objetivo, { src = '', out, uid = 1000, gid = 1000, cache = '' } = {}) {
+export function argsDocker(tipo, objetivo, { src = '', out, uid = 1000, gid = 1000, cache = '', rps = 5 } = {}) {
   const def = TIPOS[tipo]
   if (!def) throw new Error('Tipo desconocido')
   if (!out) throw new Error('Falta la carpeta de resultados')
@@ -136,9 +149,30 @@ export function argsDocker(tipo, objetivo, { src = '', out, uid = 1000, gid = 10
     case 'trivy': if (!cache) throw new Error('Trivy necesita una carpeta de caché')
       return [...base, '-v', `${cache}:/cache:rw`, img, 'fs', '--scanners', 'vuln,misconfig,secret', '--cache-dir', '/cache', '--format', 'json', '--output', '/out/trivy.json', '--quiet', '/src']
     case 'testssl': return [...base, img, '--jsonfile', '/out/testssl.json', '--quiet', '--color', '0', '--warnings', 'off', '--sneaky', `${objetivo}:443`]
+    case 'nmap': return [...base, img, '-sT', '-Pn', '--top-ports', '1000', '-sV', '--version-light', '-T3', '--max-rate', String(Math.max(1, Math.min(100, Math.floor(rps)))), '--unprivileged', '-oX', '/out/nmap.xml', objetivo]
+    case 'nuclei': if (!cache) throw new Error('nuclei necesita una carpeta de caché para sus plantillas')
+      return [...base, '-v', `${cache}:/cache:rw`, img, '-u', objetivo, '-ud', '/cache/nuclei-templates', '-jsonl', '-o', '/out/nuclei.jsonl',
+        '-rl', String(Math.max(1, Math.min(50, Math.floor(rps)))), '-c', '5', '-severity', 'low,medium,high,critical', '-etags', 'dos,fuzz,bruteforce,intrusive', '-silent', '-disable-update-check', '-nc']
+    case 'zap-full': return [...base, '-w', '/zap/wrk', '--tmpfs', '/home/zap:rw,size=512m,mode=1777', '-v', `${out}:/zap/wrk:rw`, img, 'zap-full-scan.py', '-t', objetivo, '-J', 'zap.json', '-m', '3', '-I',
+      '-z', `-config scanner.threadPerHost=1 -config scanner.delayInMs=${Math.ceil(1000 / Math.max(1, rps))}`]
     case 'zap': return [...base, '-w', '/zap/wrk', '--tmpfs', '/home/zap:rw,size=512m,mode=1777', '-v', `${out}:/zap/wrk:rw`, img, 'zap-baseline.py', '-t', objetivo, '-J', 'zap.json', '-m', '2', '-I']
     default: throw new Error('Herramienta desconocida')
   }
+}
+
+// nuclei descarga sus plantillas (~100 MB) a la caché la primera vez; el escaneo luego corre sin red de actualización
+export function argsActualizarNuclei({ cache, uid = 1000, gid = 1000 }) {
+  if (!cache) throw new Error('Falta la caché de nuclei')
+  return ['run', '--rm', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--read-only', '--tmpfs', '/tmp:rw,exec,size=512m',
+    '--user', `${uid}:${gid}`, '--cpus', '1', '--memory', '2g', '--pids-limit', '256', '--network', 'bridge', '-e', 'HOME=/tmp',
+    '-v', `${cache}:/cache:rw`, IMAGENES.nuclei, '-ut', '-ud', '/cache/nuclei-templates', '-nc']
+}
+// Una herramienta que falló NO puede verse como "sin hallazgos"
+export function fallaHerramienta(herramienta, codigo, stderr) {
+  const e = String(stderr || '')
+  if (herramienta === 'nuclei' && /no templates provided|Could not run nuclei/i.test(e)) return 'nuclei no tenía plantillas para escanear'
+  if (['nuclei', 'nmap'].includes(herramienta) && codigo !== 0) return `${herramienta} terminó con error (código ${codigo}): ${e.trim().split('\n').slice(-2).join(' ').slice(0, 300)}`
+  return ''
 }
 
 // ---------- OWASP Top 10:2025 ----------
@@ -255,7 +289,33 @@ export function leerZap(j) {
   return cerrar('zap', out)
 }
 
-export const LECTORES = { gitleaks: ['gitleaks.json', leerGitleaks], 'osv-scanner': ['osv.json', leerOsv], semgrep: ['semgrep.json', leerSemgrep], trivy: ['trivy.json', leerTrivy], testssl: ['testssl.json', leerTestssl], zap: ['zap.json', leerZap] }
+// nmap (XML): puertos abiertos; los servicios que no deberían estar en internet suben a severidad alta
+const PELIGROSOS = { 21: 'FTP', 23: 'Telnet', 445: 'SMB', 1433: 'SQL Server', 2375: 'Docker sin TLS', 3306: 'MySQL', 3389: 'Escritorio remoto', 5432: 'PostgreSQL', 5900: 'VNC', 6379: 'Redis', 9200: 'Elasticsearch', 11211: 'Memcached', 27017: 'MongoDB' }
+export function leerNmap(xml) {
+  const out = []
+  for (const m of String(xml || '').matchAll(/<port protocol="(\w+)" portid="(\d+)">([\s\S]*?)<\/port>/g)) {
+    if (!/<state state="open"/.test(m[3])) continue
+    const puerto = Number(m[2])
+    const servicio = m[3].match(/<service name="([^"]*)"(?:[^>]*product="([^"]*)")?(?:[^>]*version="([^"]*)")?/)
+    const nombre = [servicio?.[1], servicio?.[2], servicio?.[3]].filter(Boolean).join(' ')
+    const peligro = PELIGROSOS[puerto]
+    out.push({ severidad: peligro ? 'alta' : [80, 443].includes(puerto) ? 'info' : 'media', owasp: 'A02',
+      titulo: `Puerto ${puerto}/${m[1]} abierto${nombre ? `: ${nombre}` : ''}`, ubicacion: `${puerto}/${m[1]}`,
+      detalle: peligro ? `${peligro} expuesto a internet: debería estar cerrado o detrás de una VPN o lista de IPs.` : [80, 443].includes(puerto) ? 'Puerto web esperado.' : 'Confirma que este servicio debe estar público.', referencia: `nmap ${puerto}` })
+  }
+  return cerrar('nmap', out)
+}
+
+export function leerNuclei(texto) {
+  const filas = String(texto || '').split('\n').map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+  return cerrar('nuclei', filas.map(f => ({
+    severidad: SEV(f.info?.severity), owasp: /cve|vuln|outdated/i.test((f.info?.tags || []).join(',')) ? 'A03' : /xss|sqli|injection|ssti|rce/i.test((f.info?.tags || []).join(',')) ? 'A05' : 'A02',
+    titulo: corta(f.info?.name || f['template-id'], 140), ubicacion: corta(f['matched-at'] || f.host, 160),
+    detalle: corta(f.info?.remediation || f.info?.description || '', 220), referencia: [f['template-id'], ...(f.info?.classification?.['cve-id'] || [])].filter(Boolean).slice(0, 3).join(', '),
+  })))
+}
+
+export const LECTORES = { gitleaks: ['gitleaks.json', leerGitleaks], nmap: ['nmap.xml', leerNmap], nuclei: ['nuclei.jsonl', leerNuclei], 'zap-full': ['zap.json', leerZap], 'osv-scanner': ['osv.json', leerOsv], semgrep: ['semgrep.json', leerSemgrep], trivy: ['trivy.json', leerTrivy], testssl: ['testssl.json', leerTestssl], zap: ['zap.json', leerZap] }
 
 // ---------- Uno a la vez en todo el PC ----------
 // El candado es un archivo con el PID; si ese proceso ya no existe, el candado está huérfano y se puede tomar.

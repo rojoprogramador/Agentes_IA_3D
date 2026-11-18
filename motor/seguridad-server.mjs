@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, ope
 import { join, dirname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { TIPOS, IMAGENES, alcanceVigente, objetivoEnAlcance, argsDocker, LECTORES, OWASP_2025, candadoLibre } from './seguridad.mjs'
+import { TIPOS, IMAGENES, alcanceVigente, objetivoEnAlcance, argsDocker, argsActualizarNuclei, fallaHerramienta, LECTORES, OWASP_2025, candadoLibre } from './seguridad.mjs'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 const CWD = process.cwd() // carpeta de la tarea
@@ -94,8 +94,9 @@ server.tool('ver_alcance',
       dominios: a.dominios || [], incluyeSubdominios: a.subdominios === true, ips: a.ips || [], repos: a.repos || [],
       vigencia: { desde: a.vigenciaDesde || a.fecha || '', hasta: a.vigenciaHasta || '' }, ventana: a.ventana || null, zona: ZONA,
       firmante: a.autorizadoPor || '', notas: a.notas || '',
-      tipos: Object.fromEntries(Object.entries(TIPOS).map(([k, d]) => [k, { que: d.nombre, objetivo: d.objetivo === 'repo' ? 'URL del repositorio' : d.objetivo === 'host' ? 'dominio' : 'URL', tocaProduccion: d.vivo, hoy: alcanceVigente(a, k, ahora, ZONA) }])),
-      soloPasivas: 'No hay escaneos activos (puertos, ataques, fuerza bruta): no están permitidos en esta versión.',
+      tipos: Object.fromEntries(Object.entries(TIPOS).map(([k, d]) => [k, { que: d.nombre, objetivo: d.objetivo === 'repo' ? 'URL del repositorio' : d.objetivo === 'host' ? 'dominio' : 'URL', tocaProduccion: d.vivo, activo: !!d.activo, hoy: alcanceVigente(a, k, ahora, ZONA) }])),
+      pruebasActivas: a.pruebasActivas === true ? `Autorizadas, máximo ${a.limiteRps} peticiones por segundo. Contacto de emergencia: ${a.contactoEmergencia}` : 'NO autorizadas: solo pasivas',
+      nunca: 'Denegación de servicio, fuerza bruta de contraseñas, explotación, ingeniería social y pruebas contra personas: prohibidas siempre.',
     })
   })
 
@@ -119,11 +120,17 @@ server.tool('run_scan',
       const out = join(CWD, 'seguridad', `${tipo}-${new Date(inicio).toISOString().replace(/[:.]/g, '-')}`)
       mkdirSync(out, { recursive: true })
       const uid = process.getuid?.() ?? 1000, gid = process.getgid?.() ?? 1000
-      const cache = join(LOGS, 'cache-trivy')
-      if (def.herramienta === 'trivy') mkdirSync(cache, { recursive: true })
-      const args = argsDocker(tipo, obj.objetivo, { src, out, uid: uid || 1000, gid: gid || 1000, cache })
+      const cache = join(LOGS, def.herramienta === 'nuclei' ? 'cache-nuclei' : 'cache-trivy')
+      if (['trivy', 'nuclei'].includes(def.herramienta)) mkdirSync(cache, { recursive: true })
+      const args = argsDocker(tipo, obj.objetivo, { src, out, uid: uid || 1000, gid: gid || 1000, cache, rps: Number(a.limiteRps) || 5 })
+      if (def.herramienta === 'nuclei' && !existsSync(join(cache, 'nuclei-templates'))) {
+        const u = await correr('docker', argsActualizarNuclei({ cache, uid: uid || 1000, gid: gid || 1000 }), { timeoutMs: 10 * 60_000 })
+        if (!existsSync(join(cache, 'nuclei-templates'))) throw new Error(`No pude descargar las plantillas de nuclei: ${u.err.trim().split('\n').pop()}`)
+      }
       registrar({ tipo, objetivo: obj.objetivo, resultado: 'iniciado', imagen: IMAGENES[def.herramienta] })
       const r = await correr('docker', args, { timeoutMs: (def.vivo ? 20 : 30) * 60_000 })
+      const falla = fallaHerramienta(def.herramienta, r.code, r.err)
+      if (falla) { registrar({ tipo, objetivo: obj.objetivo, resultado: 'error', motivo: falla }); return fail(falla) }
       const [archivo, leer] = LECTORES[def.herramienta]
       const ruta = join(out, archivo)
       if (!existsSync(ruta)) {
@@ -131,7 +138,8 @@ server.tool('run_scan',
         return fail(`La herramienta no dejó resultados (código ${r.code}). ${r.err.trim().split('\n').slice(-3).join(' ').slice(0, 400)}`)
       }
       const texto = readFileSync(ruta, 'utf8')
-      const res = leer(texto.trim() ? JSON.parse(texto) : [])
+      // nmap (XML) y nuclei (una línea JSON por hallazgo) se leen como texto; el resto es un JSON
+      const res = ['nmap', 'nuclei'].includes(def.herramienta) ? leer(texto) : leer(texto.trim() ? JSON.parse(texto) : [])
       writeFileSync(join(out, 'resumen.json'), JSON.stringify(res, null, 1))
       registrar({ tipo, objetivo: obj.objetivo, resultado: 'ok', segundos: Math.round((Date.now() - inicio) / 1000), totales: res.totales })
       return ok({
