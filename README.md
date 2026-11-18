@@ -19,9 +19,16 @@ Funciona con **Claude Code** y tu propia suscripción de Claude. Código abierto
 - [Encender el motor](#encender-el-motor)
 - [Cómo se usa](#cómo-se-usa)
 - [Agencia: clientes, departamentos y skills](#agencia-clientes-departamentos-y-skills)
+  - [SEO técnico y QA](#seo-técnico-y-qa) · [Seguridad](#seguridad-pasiva-docker) · [Pentest activo](#pentest-activo-solo-con-contrato)
+    · [GEO](#geo-las-ia-recomiendan-a-tus-clientes) · [Alertas de caída](#alertas-de-caída-uptime-kuma--devops)
+    · [Email](#email-marketing-listmonk) · [Paid media](#paid-media-google-ads-y-meta-ads) · [Analítica](#analítica-ga4-y-search-console)
+  - [Subagentes](#subagentes-tareas-grandes-en-paralelo) · [Salas por cliente](#salas-por-cliente)
+    · [Mejora de los roles](#mejora-de-los-roles-con-su-historial) · [Motores de IA](#motores-de-ia) · [Skills](#skills-de-los-agentes)
+- [Motor en un servidor (Docker)](#motor-en-un-servidor-docker)
 - [Cómo funciona por dentro](#cómo-funciona-por-dentro)
 - [Archivos de configuración](#archivos-de-configuración)
 - [Problemas comunes](#problemas-comunes)
+- [Estructura](#estructura)
 
 ## Qué incluye
 
@@ -53,6 +60,17 @@ Funciona con **Claude Code** y tu propia suscripción de Claude. Código abierto
 - **Editor de video local**: transcripción con Whisper, corte de silencios, limpieza de audio, subtítulos y
   animaciones con código ([HyperFrames](https://github.com/heygen-com/hyperframes)).
 - **Avatares personalizables** para cada persona y agente, con vista previa 3D.
+- **Aprobación de acciones externas**: si un agente quiere crear un borrador de Gmail, un evento, compartir en Drive o
+  gastar créditos, el motor lo detiene y te pregunta en el panel o en Telegram.
+- **Memoria y aprendizaje con tu visto bueno**: memoria corta por agente, cliente y dueño; historial buscable por
+  cliente; propuestas de memoria, skills y mejoras de los roles que solo se aplican si las apruebas.
+- **Roles de agencia con herramientas reales**: SEO técnico, QA, seguridad (pasiva y pentest con contrato), analítica
+  (GA4 y Search Console), paid media (Google Ads y Meta, solo lectura), email marketing (Listmonk), GEO (si las IA
+  recomiendan la marca) y DevOps con alertas de caída.
+- **Subagentes y salas por cliente**: el coordinador parte una tarea grande en subtareas paralelas y consolida; cada
+  cliente puede tener su sala de chat con un agente líder.
+- **WhatsApp Business** para el dueño y bandeja de mensajes de clientes.
+- **Motor 24/7 en un servidor** con Docker, y **guía dentro de la app** (botón **?**).
 
 ## Qué necesitas
 
@@ -80,6 +98,14 @@ Funciona con **Claude Code** y tu propia suscripción de Claude. Código abierto
 | Google AI Pro o Ultra + [Antigravity CLI](https://antigravity.google) | Motor Antigravity: `curl -fsSL https://antigravity.google/cli/install.sh \| bash` y luego `agy` para iniciar sesión. |
 | Cuenta de ChatGPT | Motor Codex: `cd motor && npx codex login`. |
 | Clave de Google AI Studio | Motor Gemini CLI: pégala en **Agencia → Motor → Claves**. Desde junio de 2026 Gemini CLI ya no acepta la cuenta gratis de Google. |
+| [Docker](https://docs.docker.com/engine/install/) | Escaneos de seguridad y pentest, o correr el motor en un servidor. |
+| [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) | Recibir WhatsApp y alertas de Uptime Kuma sin abrir puertos. |
+| Clave de PageSpeed Insights | Auditorías SEO técnicas (gratis en Google Cloud). |
+| Cuenta de servicio de Google Cloud | Informes de GA4 y Search Console. |
+| Google Ads (developer token) / Meta (`ads_read`) | Auditorías de anuncios, solo lectura. |
+| [Listmonk](https://listmonk.app) | Dejar secuencias de correo como borradores. |
+| [Uptime Kuma](https://github.com/louislam/uptime-kuma) | Avisar cuando un sitio se cae. |
+| App de Meta con WhatsApp (Cloud API) | WhatsApp Business. |
 
 ## Instalación
 
@@ -140,7 +166,7 @@ Otros comandos dentro de `motor/`:
 | `npm run check` | Verifica que el robot entra y tiene permisos, y sale. |
 | `npm run agentes` | Lista los agentes con su ID y su rol. |
 | `npm run crear-agentes` | Crea en la app los agentes de `negocio.json → equipo`. |
-| `npm test` | Pruebas del armado de fichas y briefs. |
+| `npm test` | Pruebas de los módulos del motor (fichas, memoria, permisos, seguridad, analítica, WhatsApp…). |
 
 ## Cómo se usa
 
@@ -306,11 +332,30 @@ configuración de un cliente **solo dentro del alcance que firmó**:
 | web_pasivo | OWASP ZAP baseline (observa, no ataca) | Sí, en la ventana |
 
 Cada escaneo corre en un contenedor desechable y aislado (sin root, sin capacidades, solo lectura, CPU y memoria
-limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-registro.jsonl`. No hay escaneos activos
-(puertos, ataques): no están permitidos en esta versión. Requiere **Docker** en el PC del motor
+limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-registro.jsonl`. Requiere **Docker** en el PC del motor
 (Ubuntu/WSL: `sudo apt-get install -y docker.io && sudo usermod -aG docker $USER`). El permiso de Docker se aplica
 al abrir una sesión nueva: cierra la terminal (o `wsl --shutdown` desde Windows) antes de encender el motor. La
 primera vez cada herramienta descarga su imagen y Trivy su base (~130 MB, queda en `motor/logs/cache-trivy`).
+
+### Pentest activo (solo con contrato)
+
+Tres pruebas **activas** para cuando el cliente firma una prueba de penetración (tipo de tarea *Prueba de penetración web*). Envían
+tráfico de prueba a su sistema, así que necesitan **todos** estos candados a la vez:
+
+1. En la ficha → **Alcance**, un admin marca **"autoriza pruebas ACTIVAS"** con el documento firmado.
+2. **Contacto de emergencia** y **límite de peticiones por segundo**.
+3. Vigencia de máximo 90 días y **ventana horaria**.
+4. Cada escaneo pide **tu aprobación**.
+5. El informe termina con un **bloque de firma** del responsable humano.
+
+| Tipo | Herramienta | Qué hace |
+|---|---|---|
+| puertos | nmap (conexión TCP, sin privilegios) | Qué puertos están abiertos (bases de datos o Redis expuestos = riesgo alto). |
+| vulnerabilidades_web | nuclei (etiquetas de exposición y mala configuración) | CVE conocidos, archivos expuestos como `.git`. Excluye DoS, fuerza bruta e intrusivas. |
+| web_activo | OWASP ZAP full scan | Prueba inyecciones y XSS a velocidad limitada. |
+
+El agente reporta lo que encuentra, **nunca lo explota**. Una prueba activa sin autorización escrita es un delito
+(en Colombia, Ley 1273, art. 269A): por eso la casilla solo la marca un admin.
 
 ### GEO: ¿las IA recomiendan a tus clientes?
 
@@ -356,15 +401,32 @@ en Google, oportunidades (búsquedas casi en primera página) y acciones.
 El motor entrega la credencial y la propiedad **solo** en tareas de ese cliente: el agente no puede pedir datos de
 otra propiedad.
 
+### Subagentes (tareas grandes en paralelo)
+
+Cuando el coordinador recibe una tarea grande del Pipeline ("campaña de lanzamiento completa"), la reparte en hasta
+**5 subtareas** para los especialistas. Corren en paralelo y, cuando todas entregan, el coordinador retoma la tarea
+original y **consolida** todo en una sola entrega para ti. Las subtareas no vuelven a repartir ni escriben en la
+memoria del cliente; si una falla, la tarea principal espera a que la resuelvas.
+
+### Salas por cliente
+
+En la ficha del cliente → **Negocio** activa **Sala de chat de este cliente** y elige un **agente líder**. En la
+Oficina, el selector **Salas de clientes…** abre un chat con solo los agentes que atienden a ese cliente. Responde el
+líder; si la pregunta es de otro, lo menciona con `@Nombre` y ese agente contesta. Todos ven la ficha y el historial
+**de ese cliente** y de ningún otro.
+
+### Mejora de los roles con su historial
+
+Una vez al mes por rol (o con **Agencia → Motor → Aprendizaje → Revisar ahora**), el motor mira cuántas tareas de ese
+rol se aprobaron a la primera, cuántas se corrigieron y tus notas. Si encuentra un patrón (al menos 4 correcciones),
+propone hasta 3 instrucciones nuevas o quitar alguna. Aparece en **Aprendizaje propuesto**, arriba del Pipeline; la
+editas y la apruebas. Lo aprendido queda en Firebase (máximo 8 instrucciones por rol), no en `roles/catalogo.json`, y
+se puede quitar. Usa un modelo sin Claude por defecto.
+
 ### Guía dentro de la app
 
 El botón **?** de la cabecera explica la pantalla en la que estás, iluminando cada parte (con **Mayús + clic**, el
 recorrido completo). La primera vez que alguien entra, el recorrido aparece solo.
-
-### Motor en un servidor (Docker)
-
-Para que el motor trabaje 24/7 sin tu PC: `docker compose up -d --build` en un VPS (2 vCPU, 4 GB). Con Claude **Pro** no
-conviene una cola desatendida; usa **Max** (`claude setup-token`) o **clave de API**. Guía completa: `docs/vps.md`.
 
 ### Motores de IA
 
@@ -433,15 +495,36 @@ Paquetes recomendados para una agencia:
 [Remotion](https://github.com/remotion-dev/skills) también hace video, pero exige licencia de pago a empresas de
 más de 3 personas.
 
+## Motor en un servidor (Docker)
+
+Para que el motor trabaje 24/7 sin tu PC:
+
+```bash
+docker compose up -d --build
+```
+
+en un VPS (2 vCPU, 4 GB de RAM, 40 GB de disco; la imagen pesa ~9 GB porque trae Chromium, los motores de IA y el
+modelo de voz). Corre como usuario sin privilegios y guarda logs, trabajos, entregas, skills y la sesión de Claude en
+volúmenes. Con Claude **Pro** no conviene una cola desatendida; usa **Max** (`claude setup-token`) o **clave de API**.
+Los escaneos de seguridad no corren dentro del contenedor (no se le da acceso a Docker). Guía completa:
+[`docs/vps.md`](docs/vps.md).
+
 ## Cómo funciona por dentro
 
 ```
- Tú y tu equipo (app web o Telegram)      Firebase (gratis)            Tu PC
+ Tú y tu equipo (app web,                 Firebase (gratis)            Tu PC o un VPS
+ Telegram o WhatsApp)
  ──────────────────────────────────  →  ──────────────────  →  ─────────────────────────────
  crean tareas, aprueban, chatean         tareas, agentes,        motor/ toma las tareas y las
- con los agentes, piden skills           clientes, chats         ejecuta con Claude Code
+ con los agentes, piden skills           clientes, chats         ejecuta con Claude Code u
+                                                                 otros motores
 ```
 
+- El motor no abre puertos: Firebase y Telegram los consulta él. WhatsApp y las alertas de Uptime Kuma llegan por un
+  túnel de Cloudflare a `127.0.0.1`, y cada mensaje se verifica (firma HMAC o token).
+- Las herramientas especiales (auditoría, seguridad, analítica, anuncios, email, medios) son servidores MCP locales
+  que el motor da a cada agente según su rol. Las credenciales de un cliente solo se entregan en tareas de ese
+  cliente.
 - El motor entra a Firebase con un **usuario robot** con permisos mínimos: solo toca tareas de agentes, responde
   los pedidos de skills y puede dar una tarea de departamento sin tomar a uno de sus agentes. No puede reasignar
   tareas de personas.
@@ -451,7 +534,9 @@ más de 3 personas.
   `<Cliente>/<Departamento>/<fecha>/v<n>/`.
 - Reglas de los agentes (`motor/CLAUDE.md`): nada se publica ni se envía, no inventan datos del cliente y nunca
   piden contraseñas.
-- Tus claves viven solo en `motor/.env` y `app/.env`, que nunca se suben a GitHub.
+- Tus claves viven en `motor/.env` o en la colección `secretos` de tu Firebase (el panel las escribe, solo el robot
+  las lee). Nada de eso se sube a GitHub.
+- Explicación técnica de cada fase (qué hace, cómo, dónde y por qué): [`docs/guia-fases.md`](docs/guia-fases.md).
 
 ## Archivos de configuración
 
@@ -465,6 +550,11 @@ más de 3 personas.
 | `roles/catalogo.json` | Roles: misión, herramientas y forma de entrega | Sí |
 | `motor/.claude/skills/` | Skills instaladas y su origen (`skills-origen.json`) | No |
 | `motor/skills-archivo/` | Skills archivadas por el curador (se restauran desde el panel) | No |
+| `motor/skills-clientes/` | Skills propias de cada cliente (aprendizaje propuesto) | No |
+| `motor/logs/` | Registro del motor, historial (`historial.db`), consumo, uso de skills, registro de seguridad, cachés | No |
+| `motor/trabajos/`, `motor/entregas/` | Carpeta de trabajo de cada tarea y entregas locales | No |
+| `docker-compose.yml`, `motor/Dockerfile` | Motor en un servidor | Sí |
+| `docs/plantillas/autorizacion-pruebas-seguridad.md` | Plantilla de autorización para pruebas de seguridad | Sí |
 
 ## Problemas comunes
 
@@ -482,13 +572,22 @@ más de 3 personas.
   (`sudo apt-get install -y libnss3 libnspr4 libasound2t64`), o define `navegador` en `motor/media-config.json`
   con la ruta de Chrome.
 - **Telegram no conecta**: algunas redes bloquean api.telegram.org; el motor reintenta solo.
+- **WhatsApp dejó de llegar tras reiniciar**: sin token de Cloudflare la URL `*.trycloudflare.com` cambia en cada
+  encendido; vuelve a pegarla en Meta o crea un túnel fijo.
+- **"permission denied" de Docker en un escaneo**: tu usuario no está en el grupo `docker` o la sesión es anterior
+  al cambio; cierra la terminal (o `wsl --shutdown`) y vuelve a encender el motor.
+- **Una tarea queda en "esperando subtareas"**: una de sus subtareas tiene error; resuélvela o bórrala.
+- **Analítica o anuncios dicen "sin acceso"**: el cliente no ha dado acceso al correo de la cuenta de servicio, o
+  faltan los IDs en su ficha.
 
 ## Estructura
 
 ```
 app/        App web (React, Vite, Three.js, Firebase)
-motor/      Motor local de agentes (Node + Claude Code): worker, skills, Telegram, voz, medios
+motor/      Motor de agentes (Node): worker, motores de IA, servidores MCP (medios, auditoría, seguridad,
+            analítica, anuncios, email), Telegram, WhatsApp, voz, Dockerfile
 roles/      Catálogo de roles y herramientas
+docs/       Guía de fases, guía de VPS y plantillas
 tools/      Configurador e inicio automático
 .claude/    Skill /instalar
 ```
