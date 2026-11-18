@@ -312,6 +312,14 @@ limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-regist
 al abrir una sesión nueva: cierra la terminal (o `wsl --shutdown` desde Windows) antes de encender el motor. La
 primera vez cada herramienta descarga su imagen y Trivy su base (~130 MB, queda en `motor/logs/cache-trivy`).
 
+### Paid media (Google Ads y Meta Ads)
+
+El rol **Paid media** (tipo *Auditoría de anuncios*) lee las campañas del cliente en **solo lectura** y entrega un PDF
+con gasto, resultados, desperdicio y **propuestas**; no cambia nada en las cuentas. Carga las credenciales de la
+agencia en **Agencia → Motor → Claves** (Google Ads de tu MCC con developer token aprobado; token de un usuario del
+sistema de Meta con `ads_read`) y en la ficha del cliente → **Analítica y anuncios** sus IDs de cuenta y el **tope de
+gasto mensual** (avisa al 90 %). Detalle: `docs/guia-fases.md`.
+
 ### Analítica (GA4 y Search Console)
 
 El rol **Analítica web** (tipo *Informe mensual de analítica*) lee los datos reales del cliente en Google Analytics 4

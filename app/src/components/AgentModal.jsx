@@ -103,7 +103,7 @@ export default function AgentModal({ agent, nextOrder, onClose, showToast, userE
   const provSel = providers.find(p => p.id === form.proveedor)
   // Roles con herramientas de servidores MCP: Gmail, calendario y Drive solo los tiene Claude Code.
   // Video y entregas (herramientas del motor) e imágenes (su propio generador) también funcionan con Antigravity.
-  const GRUPOS_MCP = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad', 'analitica']
+  const GRUPOS_MCP = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad', 'analitica', 'ads']
   const GRUPOS_ANTIGRAVITY = ['entregas', 'editor_video', 'magnific_imagenes']
   const gruposMcp = (CATALOGO.roles[form.rol]?.herramientas || []).filter(g => GRUPOS_MCP.includes(g))
   const soloClaude = gruposMcp.some(g => !GRUPOS_ANTIGRAVITY.includes(g))
