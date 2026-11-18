@@ -117,7 +117,7 @@ service cloud.firestore {
     match /propuestas/{id} {
       allow read: if isAdmin() || isAgentBot();
       allow create: if isAgentBot() && request.resource.data.estado == 'pendiente'
-        && request.resource.data.tipo in ['memoria', 'skill'];
+        && request.resource.data.tipo in ['memoria', 'skill', 'rol'];
       allow update: if (isAdmin()
           && request.resource.data.tipo == resource.data.tipo
           && request.resource.data.destino == resource.data.destino
@@ -175,6 +175,15 @@ service cloud.firestore {
       allow create: if isAdmin() && request.resource.data.estado == 'pendiente' && request.resource.data.clienteId is string;
       allow update: if isAgentBot() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'resumen', 'error'])
         && request.resource.data.estado in ['midiendo', 'listo', 'error'];
+      allow delete: if isAdmin();
+    }
+
+    // Optimización de un rol pedida desde el panel (C7)
+    match /optimizacionPedidos/{id} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if isAdmin() && request.resource.data.estado == 'pendiente' && request.resource.data.rolId is string;
+      allow update: if isAgentBot() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'resultado', 'error'])
+        && request.resource.data.estado in ['trabajando', 'listo', 'error'];
       allow delete: if isAdmin();
     }
 

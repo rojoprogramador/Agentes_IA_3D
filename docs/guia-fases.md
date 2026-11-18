@@ -264,3 +264,43 @@ eligible(padre): ¿todas las hijas entregaron (o fueron aprobadas)?  → sí →
 
 **Verificado.** 1 prueba nueva (bloques y barrera: lista, pendiente, error y borrada). El flujo completo con tareas
 reales necesita las reglas publicadas y un coordinador; queda para la prueba en producción.
+
+---
+
+## C7 · Optimización fuera de línea (mejorar los roles con su historial)
+
+**Qué es.** B2 aprende de **una** tarea. C7 mira **todo el historial de un rol**: cuántas tareas se aprobaron a la
+primera, cuántas se corrigieron y cuántas se rechazaron, y lee las notas que dejaste. Si encuentra un **patrón** ("le
+corrigen siempre el largo", "siempre falta el llamado a la acción"), propone ajustar las instrucciones del rol. Tú
+apruebas o editas; nada cambia solo.
+
+**Recorrido.**
+```
+Cada 6 h el motor revisa: ¿algún rol activo sin revisar hace 30 días?   o   Agencia → Motor → "Revisar ahora"
+  estadisticasRol(tareas de los agentes de ese rol, sin subtareas) → si hay ≥ 4 corregidas/rechazadas:
+  promptOptimizacion (misión, instrucciones fijas, instrucciones aprendidas numeradas, resultados, notas del dueño)
+  → modelo SIN Claude y SIN herramientas (la misma cadena de B2) → JSON {agregar, quitar, motivo}
+  → parsearOptimizacion (máx. 3, < 300 caracteres, sin claves ni inyección, sin duplicados)
+  → propuestas/{id} tipo 'rol' → Pipeline → Aprendizaje propuesto (editas y apruebas)
+  → config/roles.<rol>.instruccionesExtra → perfilDe() las suma a las del catálogo en cada tarea
+```
+
+**Dónde mirar.** `motor/optimizacion.mjs` (puro), `correrOptimizacion` en `motor/worker.mjs`, `perfilDe`,
+`PropuestaRol` en `PropuestasAprendizaje.jsx`, botón en Agencia → Motor → Aprendizaje.
+
+**Por qué así.**
+- **Patrones, no casos sueltos**: con menos de 4 correcciones no se propone nada; el prompt pide explícitamente
+  patrones que se repiten.
+- **No se toca `roles/catalogo.json`**: es código del repositorio. Lo aprendido vive en Firestore (`config/roles`),
+  se puede quitar y no se mezcla con las actualizaciones del proyecto.
+- **Instrucciones fijas vs. aprendidas**: las del catálogo no se pueden quitar; las aprendidas sí (máx. 8 por rol),
+  para que el prompt no crezca sin límite.
+- **Sin Claude por defecto**: es trabajo de fondo; usa la misma cadena barata de B2.
+
+**Conceptos.**
+- **Optimización de prompts fuera de línea**: mejorar las instrucciones con datos de uso real, en lote y con revisión
+  humana, en vez de "en caliente" durante cada tarea.
+- **Tasa de aprobación a la primera**: la métrica que importa; cada corrección es tiempo tuyo.
+
+**Verificado.** 4 pruebas nuevas (clasificación de resultados, prompt, validación de la propuesta, aplicación con
+tope). El ciclo con datos reales necesita tareas corregidas y las reglas publicadas.
