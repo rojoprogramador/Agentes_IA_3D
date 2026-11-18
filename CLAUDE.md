@@ -142,6 +142,13 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `GOOGLE_ANALITICA_SA`), `AGENTES_GA4_PROPIEDAD` y `AGENTES_GSC_SITIO` desde `clients.analitica` del cliente de la
   tarea. Latido: `analitica { cuentaAgencia, clientes }` (solo correos). Rol `analista`, grupo `analitica`, tipo
   `informe_analitica` (rutina mensual día 3). URLs de Google cambiables por env solo para pruebas.
+- Herramientas para modelos por API (B8): `motor/herramientas-api.mjs` (con pruebas): `herramientasPara(grupos)` (web →
+  leer_url; archivos → listar_adjuntos/leer_adjunto; salida → escribir_archivo), `crearEjecutor` (leer_url con
+  `urlAuditable` + DNS en cada redirección y HTML→texto; adjuntos solo en `adjuntos/` y de texto; escribir solo nombres
+  simples y extensiones de texto en `salida/`, máx. 20 archivos de 2 MB), `bucleHerramientas` (máx. 10 pasos y luego
+  respuesta final con `tool_choice: none`), `crearLlamada` y `responder` (si el proveedor rechaza `tools`, repite sin
+  ellas). `runApi(cfg, prompt, { cwd, grupos })` en el worker; `needsTools` ya no manda a Claude las tareas cuyos grupos
+  están en `GRUPOS_API` (y `formatoEntrega: archivos` solo si la tarea no tiene `salida`).
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
