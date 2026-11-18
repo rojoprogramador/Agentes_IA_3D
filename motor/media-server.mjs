@@ -627,4 +627,29 @@ server.tool('buscar_historial',
     } catch (e) { return fail(e) }
   })
 
+// Herramienta de permisos de Claude Code (--permission-prompt-tool), fase B4. No la usa el agente: Claude Code
+// la llama cuando el agente quiere usar una herramienta que no está permitida de antemano (enviar, publicar,
+// gastar). Le pregunta al motor, que le pregunta a un humano. Ante cualquier fallo, DENIEGA.
+server.tool('pedir_aprobacion',
+  'Uso interno del motor: decide si se permite una herramienta. No la llames tú.',
+  { tool_name: z.string(), input: z.any().optional(), tool_use_id: z.string().optional() },
+  async ({ tool_name, input }) => {
+    const responder = (r) => ({ content: [{ type: 'text', text: JSON.stringify(r) }] })
+    const denegar = (message) => responder({ behavior: 'deny', message })
+    const url = process.env.AGENTES_APROBACION_URL, token = process.env.AGENTES_APROBACION_TOKEN, ejecucion = process.env.AGENTES_EJECUCION
+    if (!url || !token || !ejecucion) return denegar('Esta acción necesita aprobación y el motor no está disponible para pedirla.')
+    try {
+      const r = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': token },
+        body: JSON.stringify({ ejecucion, tool_name, input: input ?? {} }),
+        signal: AbortSignal.timeout(6 * 60 * 1000), // el motor responde a los 5 min como mucho
+      })
+      const j = await r.json()
+      if (j?.behavior === 'allow') return responder({ behavior: 'allow', updatedInput: input ?? {} })
+      return denegar(String(j?.message || 'Acción denegada.'))
+    } catch (e) {
+      return denegar(`No pude pedir la aprobación (${e.message}). Acción denegada.`)
+    }
+  })
+
 await server.connect(new StdioServerTransport())

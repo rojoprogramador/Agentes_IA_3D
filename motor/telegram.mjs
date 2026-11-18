@@ -3,7 +3,7 @@
 
 const API = (token, method) => `https://api.telegram.org/bot${token}/${method}`
 
-export function startTelegram({ token, ownerId, log, onMessage, onReply, transcribe }) {
+export function startTelegram({ token, ownerId, log, onMessage, onReply, transcribe, onCallback }) {
   let offset = 0
   let stopped = false
 
@@ -50,9 +50,21 @@ export function startTelegram({ token, ownerId, log, onMessage, onReply, transcr
     }
     while (!stopped) {
       try {
-        const updates = await call('getUpdates', { offset, timeout: 50, allowed_updates: ['message'] })
+        const updates = await call('getUpdates', { offset, timeout: 50, allowed_updates: ['message', 'callback_query'] })
         for (const u of updates) {
           offset = u.update_id + 1
+          // Botón pulsado (aprobaciones, B4): solo cuenta si lo pulsa el dueño
+          if (u.callback_query) {
+            const q = u.callback_query
+            const esDueno = ownerId && String(q.from?.id) === String(ownerId)
+            let texto = 'Solo mi dueño puede decidir esto.'
+            if (esDueno) { try { texto = (await onCallback?.(q.data)) || 'Listo' } catch (e) { texto = 'No pude registrarlo: ' + e.message } }
+            await call('answerCallbackQuery', { callback_query_id: q.id, text: String(texto).slice(0, 190) }).catch(() => {})
+            if (esDueno && q.message) {
+              await call('editMessageText', { chat_id: q.message.chat.id, message_id: q.message.message_id, text: `${q.message.text || ''}\n\n→ ${texto}`.slice(0, 4000) }).catch(() => {})
+            }
+            continue
+          }
           const m = u.message
           const voice = m?.voice || (m?.audio?.mime_type === 'audio/ogg' ? m.audio : null)
           if (!m?.text && !voice) continue
@@ -106,6 +118,14 @@ export function startTelegram({ token, ownerId, log, onMessage, onReply, transcr
   return {
     // Devuelve los message_id enviados (para reconocer respuestas a ese aviso)
     notify: (text) => ownerId ? send(ownerId, text) : Promise.resolve([]),
+    // Mensaje con botones (inline keyboard); devuelve el message_id o null
+    ask: async (text, botones) => {
+      if (!ownerId) return null
+      try { return (await call('sendMessage', { chat_id: ownerId, text: String(text).slice(0, 3800), reply_markup: { inline_keyboard: botones } })).message_id }
+      catch (e) { log('Telegram no envió la pregunta:', e.message); return null }
+    },
+    // Cambia el texto de un mensaje (y quita sus botones)
+    edit: (messageId, text) => ownerId && messageId ? call('editMessageText', { chat_id: ownerId, message_id: messageId, text: String(text).slice(0, 4000) }).catch(() => {}) : Promise.resolve(),
     stop: () => { stopped = true },
   }
 }

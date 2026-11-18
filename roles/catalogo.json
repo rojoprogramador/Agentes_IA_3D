@@ -1,5 +1,15 @@
 {
   "_ayuda": "Catálogo de roles. Cada agente de la Oficina tiene un rol (campo 'rol'). El rol define su misión base, sus herramientas y cómo entrega. Puedes agregar roles nuevos copiando uno existente.",
+  "_ayudaAprobacion": "Herramientas que envían, publican o gastan: cada uso pide aprobación (Telegram o panel). Un * final es comodín. Crear archivos en la carpeta de Drive del propio agente no pregunta.",
+  "accionesConAprobacion": [
+    "mcp__claude_ai_Gmail__create_draft", "mcp__claude_ai_Gmail__label_thread", "mcp__claude_ai_Gmail__label_message",
+    "mcp__claude_ai_Gmail__send*", "mcp__claude_ai_Google_Calendar__create_event", "mcp__claude_ai_Google_Calendar__update_event",
+    "mcp__claude_ai_Google_Drive__create_file", "mcp__claude_ai_Google_Drive__update_file", "mcp__claude_ai_Google_Drive__share_file",
+    "mcp__magnific__images_generate", "mcp__magnific__images_upscale", "mcp__magnific__images_expand",
+    "mcp__magnific__images_remove_background", "mcp__magnific__images_replace_background", "mcp__magnific__images_restyle",
+    "mcp__magnific__images_reimagine", "mcp__magnific__images_relight", "mcp__magnific__images_variations",
+    "mcp__magnific__design_auto_resize"
+  ],
   "herramientas": {
     "web": ["WebSearch", "WebFetch"],
     "archivos": ["Read", "Glob", "Grep"],

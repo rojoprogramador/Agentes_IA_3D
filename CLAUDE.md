@@ -109,6 +109,16 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `config/curador.fijadas`, `agents.skills` y skills de clientes con rutinas activas. Respaldo tar.gz previo
   (`logs/respaldos-skills/`, últimos 8). `config/curador.simular` (por defecto true) solo informa. skillOps `curar`
   (siempre simulación desde el panel) y `restaurar`. Heartbeat: `curador` (informe, archivadas) y `usos` por skill.
+- Aprobación de acciones (`motor/aprobaciones.mjs`, puro con pruebas). `runClaude` separa con `separarHerramientas`
+  las de `catalogo.json → accionesConAprobacion` (SENSIBLES_BASE si falta): fuera de `--allowedTools`, con
+  `--disallowedTools Bash` y `--permission-prompt-tool mcp__agentes-media__pedir_aprobacion`. Esa herramienta
+  (media-server.mjs) hace POST a un servidor HTTP del worker en 127.0.0.1 (token por encendido, env
+  `AGENTES_APROBACION_URL/TOKEN`, `AGENTES_EJECUCION`); ante cualquier fallo deniega. `resolverPermiso`: `decisionPrevia`
+  (no es de esta ejecución → denegar; Drive create_file con `parentId` = carpeta del agente → permitir; siempre/tarea →
+  permitir; programada → denegar) y si no, crea `aprobaciones/{id}` + Telegram con botones (`apr:<id>:<alcance>`,
+  `onCallback`) y espera 5 min (`caducada`). Decisión desde el panel (`AprobacionesPendientes.jsx`, en App.jsx) o
+  Telegram. "Siempre" → `config/permisosAcciones.siempre` (el robot puede escribir ese doc). `MCP_TOOL_TIMEOUT` se sube
+  para que la espera no corte la llamada. Al arrancar, las `pendiente` viejas pasan a `caducada`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

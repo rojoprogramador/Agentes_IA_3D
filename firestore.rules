@@ -128,10 +128,25 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Aprobación de acciones con efecto externo (B4): el motor crea la solicitud y registra el final;
+    // un admin solo decide una que siga pendiente (aprobar con un alcance, o denegar).
+    match /aprobaciones/{id} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if isAgentBot() && request.resource.data.estado == 'pendiente';
+      allow update: if (isAdmin() && resource.data.estado == 'pendiente'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'alcance', 'decididaPor', 'decididaAt'])
+          && ((request.resource.data.estado == 'aprobada' && request.resource.data.alcance in ['una', 'tarea', 'siempre'])
+            || request.resource.data.estado == 'denegada'))
+        || (isAgentBot() && resource.data.estado in ['pendiente', 'aprobada', 'denegada']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'alcance', 'decididaPor', 'decididaAt']));
+      allow delete: if isAdmin();
+    }
+
     // Config (lista de clientes): leer todos, escribir solo admin
     match /config/{docId} {
       allow read: if isAuth();
-      allow write: if isAdmin() || (isAgentBot() && docId == 'agentWorker');
+      // permisosAcciones: el motor agrega una herramienta cuando el dueño pulsa "Siempre" en Telegram (B4)
+      allow write: if isAdmin() || (isAgentBot() && docId in ['agentWorker', 'permisosAcciones']);
     }
 
     // Agencia: fichas de clientes, departamentos y tipos de tarea.

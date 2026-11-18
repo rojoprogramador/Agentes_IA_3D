@@ -11,7 +11,7 @@ import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth'
 import {
   getFirestore, collection, doc, query, where, onSnapshot, getDoc, getDocs, updateDoc, setDoc, addDoc,
-  serverTimestamp, increment, Timestamp,
+  serverTimestamp, increment, Timestamp, arrayUnion,
 } from 'firebase/firestore'
 import { startTelegram } from './telegram.mjs'
 import { crearSkills } from './skills.mjs'
@@ -20,6 +20,9 @@ import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
+import { TIEMPO_APROBACION_MS, HERRAMIENTA_PERMISOS, SENSIBLES_BASE, separarHerramientas, decisionPrevia, nombreAccion, resumenAccion, respuestaPermiso, botonesTelegram, parsearCallback, textoAviso } from './aprobaciones.mjs'
+import { createServer } from 'node:http'
+import { randomBytes } from 'node:crypto'
 import { AJUSTES_CURADOR, skillsUsadas, leerEstado as leerUsoSkills, guardarEstado as guardarUsoSkills, sumarUsos, tocaPasada, pasada as pasadaCurador, listarArchivo, restaurar as restaurarSkill } from './curador.mjs'
 import { AJUSTES_APRENDIZAJE, motivoRevision, promptAprendizaje, parsearPropuestas, skillMarkdown, rutaSkill } from './aprendizaje.mjs'
 import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
@@ -191,6 +194,124 @@ function installedSkills() {
     }
   }
   return [...out.values()].slice(0, 150)
+}
+
+// ---------- Aprobación de acciones con efecto externo (B4) ----------
+// Servidor HTTP solo en 127.0.0.1 con un token por encendido: lo usa pedir_aprobacion (media-server.mjs).
+// Cada corrida de Claude con herramientas sensibles se registra como "ejecución": el contexto (tarea, agente,
+// si es programada) lo pone el motor, no el proceso que pregunta.
+let servidorAprobaciones = null           // { url, token }
+const ejecuciones = new Map()             // id -> { tareaId, agentId, sensibles, permitidas: Set }
+const esperando = new Map()               // aprobacionId -> { ejecucion, terminar(alcance, por) }
+let permisosSiempre = []                  // config/permisosAcciones.siempre (lo edita el admin)
+const sensiblesCatalogo = () => { const l = lista(loadCatalogo().accionesConAprobacion); return l.length ? l : SENSIBLES_BASE }
+
+function registrarEjecucion({ tareaId, agentId, sensibles }) {
+  const id = randomBytes(9).toString('hex')
+  // "Toda esta tarea" vale para las siguientes corridas de la misma tarea (corrección, revisión) mientras el motor siga encendido
+  const previa = tareaId ? [...ejecuciones.values()].find(e => e.tareaId === tareaId) : null
+  ejecuciones.set(id, { tareaId, agentId, sensibles, permitidas: previa?.permitidas || permisosPorTarea.get(tareaId) || new Set() })
+  return id
+}
+const permisosPorTarea = new Map() // tareaId -> Set(tool)
+function cerrarEjecucion(id) {
+  const e = ejecuciones.get(id)
+  if (e?.tareaId) permisosPorTarea.set(e.tareaId, e.permitidas)
+  ejecuciones.delete(id)
+  for (const [aid, w] of esperando) if (w.ejecucion === id) w.terminar('cancelada', 'el agente terminó o se detuvo')
+}
+
+async function resolverPermiso({ ejecucion, tool_name: tool, input }) {
+  const ej = ejecuciones.get(ejecucion)
+  if (!ej) return respuestaPermiso(false, null, 'Ejecución desconocida: acción denegada.')
+  const t = ej.tareaId ? tasks.get(ej.tareaId) : null
+  const agent = agents.get(ej.agentId)
+  const previa = decisionPrevia({
+    tool, input, sensiblesDeEstaEjecucion: ej.sensibles, siempre: permisosSiempre, deEstaTarea: [...ej.permitidas],
+    programada: !!t?.programadaId, carpetaDrive: folderFor(agent) || '',
+  })
+  const quien = `${agent?.name || 'Agente'}${t ? ` ("${t.tarea}")` : ''}`
+  if (previa.decision === 'permitir') { log(`🔓 ${quien}: ${nombreAccion(tool)} (${previa.motivo})`); return respuestaPermiso(true, input) }
+  if (previa.decision === 'denegar') { log(`🔒 ${quien}: ${nombreAccion(tool)} denegada · ${previa.motivo}`); return respuestaPermiso(false, input, previa.motivo) }
+
+  const accion = nombreAccion(tool), resumen = resumenAccion(tool, input)
+  const datos = {
+    estado: 'pendiente', tool, accion, resumen, tareaId: ej.tareaId || '', tarea: t?.tarea || '(chat)',
+    agentId: ej.agentId || '', agente: agent?.name || '', creadaAt: serverTimestamp(),
+    venceAt: Timestamp.fromMillis(Date.now() + TIEMPO_APROBACION_MS),
+  }
+  let id = '', enFirestore = true
+  try { id = (await addDoc(collection(db, 'aprobaciones'), datos)).id }
+  catch (e) { enFirestore = false; id = 'local' + randomBytes(6).toString('hex'); log('Aprobaciones sin acceso en Firestore (¿reglas publicadas?):', e.code || e.message) }
+  const msgId = await telegram?.ask?.(textoAviso({ agente: agent?.name, tarea: t?.tarea, accion, resumen }), botonesTelegram(id))
+  if (!enFirestore && !msgId) {
+    log(`🔒 ${quien}: ${accion} denegada (no hay cómo preguntar: ni panel ni Telegram)`)
+    return respuestaPermiso(false, input, 'Esta acción necesita la aprobación del dueño y ahora no hay cómo pedírsela. Deja el contenido listo en tu entrega.')
+  }
+  log(`🔐 ${quien} pide aprobación: ${accion}`)
+  if (t) updateDoc(doc(db, 'tasks', t.id), { esperandoAprobacion: accion }).catch(() => {})
+
+  const alcance = await new Promise(resolve => {
+    const timer = setTimeout(() => terminar('caducada', 'sin respuesta en 5 min'), TIEMPO_APROBACION_MS)
+    function terminar(a, por) {
+      if (!esperando.has(id)) return
+      esperando.delete(id); clearTimeout(timer)
+      const ok = ['una', 'tarea', 'siempre'].includes(a)
+      const estado = ok ? 'aprobada' : a === 'denegar' ? 'denegada' : a
+      if (enFirestore) updateDoc(doc(db, 'aprobaciones', id), { estado, alcance: ok ? a : '', decididaPor: por, decididaAt: serverTimestamp() }).catch(() => {})
+      if (msgId) telegram?.edit(msgId, `${textoAviso({ agente: agent?.name, tarea: t?.tarea, accion, resumen })}\n\n→ ${ok ? `Aprobada (${a === 'una' ? 'una vez' : a === 'tarea' ? 'toda esta tarea' : 'siempre'})` : estado === 'denegada' ? 'Denegada' : estado === 'caducada' ? 'Caducó: denegada' : 'Cancelada'} · ${por}`)
+      resolve(a)
+    }
+    esperando.set(id, { ejecucion, terminar })
+  })
+  if (t) updateDoc(doc(db, 'tasks', t.id), { esperandoAprobacion: null }).catch(() => {})
+  if (alcance === 'tarea') ej.permitidas.add(tool)
+  if (alcance === 'siempre') {
+    permisosSiempre = [...new Set([...permisosSiempre, tool])]
+    setDoc(doc(db, 'config', 'permisosAcciones'), { siempre: arrayUnion(tool), updatedAt: serverTimestamp() }, { merge: true })
+      .catch(e => log('No pude guardar el permiso "siempre" (¿reglas publicadas?):', e.code || e.message))
+  }
+  const ok = ['una', 'tarea', 'siempre'].includes(alcance)
+  log(`${ok ? '🔓' : '🔒'} ${quien}: ${accion} → ${alcance}`)
+  return respuestaPermiso(ok, input, alcance === 'caducada'
+    ? 'Nadie respondió la solicitud de aprobación en 5 minutos: acción denegada. No la intentes de nuevo; deja el contenido listo en tu entrega.'
+    : undefined)
+}
+
+// Botón de Telegram o decisión desde el panel
+function decidirAprobacion(id, alcance, por) {
+  const w = esperando.get(id)
+  if (!w) return 'Esa solicitud ya no está activa'
+  w.terminar(alcance, por)
+  return alcance === 'denegar' ? 'Denegada' : 'Aprobada'
+}
+async function onCallbackTelegram(data) {
+  const c = parsearCallback(data)
+  if (!c) return 'Botón desconocido'
+  return decidirAprobacion(c.id, c.alcance, 'Telegram')
+}
+
+function iniciarServidorAprobaciones() {
+  const token = randomBytes(24).toString('hex')
+  const srv = createServer((req, res) => {
+    if (req.method !== 'POST' || req.url !== '/aprobacion' || req.headers['x-token'] !== token) { res.writeHead(403); res.end(); return }
+    let body = ''
+    req.on('data', d => { body += d; if (body.length > 500_000) req.destroy() })
+    req.on('end', async () => {
+      let r
+      try { r = await resolverPermiso(JSON.parse(body)) } catch (e) { r = respuestaPermiso(false, null, `Error del motor (${e.message}): acción denegada.`) }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(r))
+    })
+  })
+  srv.requestTimeout = 0 // la respuesta puede tardar hasta 5 min (lo que tarde el humano)
+  return new Promise((ok) => {
+    srv.on('error', e => { log('✖ Servidor de aprobaciones:', e.message, '→ las acciones con efecto externo quedan denegadas'); ok() })
+    srv.listen(0, '127.0.0.1', () => {
+      servidorAprobaciones = { url: `http://127.0.0.1:${srv.address().port}/aprobacion`, token }
+      ok()
+    })
+  })
 }
 
 // ---------- Curador de skills (B3) ----------
@@ -846,6 +967,9 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
       ...Object.entries(sistemas).map(([c, s]) => `- ${c}: ${s}`),
       '- Cliente sin sistema asignado: elige la skill de diseño que mejor encaje entre las instaladas y explica la elección en las notas finales.')
   }
+  if (!usaApi(agent, t) && separarHerramientas(toolsFor(agent, t), sensiblesCatalogo()).sensibles.length) {
+    lines.push(`\n## Acciones que necesitan aprobación\nCrear borradores o eventos, crear archivos fuera de tu carpeta de entregas y gastar créditos piden permiso a ${OWNER} cada vez (puede tardar unos minutos). Si te la deniegan, no la intentes de nuevo: deja el contenido listo en tu entrega y explica en "Notas" qué faltó hacer.${t?.programadaId ? ' Esta es una tarea programada: esas acciones se deniegan, así que prepáralas sin ejecutarlas.' : ''}`)
+  }
   if (!usaApi(agent, t) && toolsFor(agent, t).includes('mcp__agentes-media__buscar_historial')) {
     lines.push(`\n## Historial${client ? ' de ' + client.nombre : ''}\nSi tienes la herramienta buscar_historial, puedes buscar en las tareas anteriores${client ? ' de este cliente' : ' internas'} (entregas, correcciones y respuestas de ${OWNER}). Úsala antes de proponer algo que quizá ya se hizo o se corrigió.`)
   }
@@ -980,13 +1104,19 @@ async function instalarSkillPropuesta(pr) {
 }
 
 // ---------- Claude Code ----------
-function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '' } = {}) {
+function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '', agentId = '' } = {}) {
   return new Promise((resolve) => {
+    // B4: las herramientas que envían, publican o gastan NO van en --allowedTools; cada uso pasa por
+    // pedir_aprobacion (--permission-prompt-tool), que le pregunta a un humano. Sin el servidor de
+    // aprobaciones simplemente quedan denegadas. Bash queda prohibido explícitamente.
+    const { automaticas, sensibles } = separarHerramientas(tools, sensiblesCatalogo())
+    const ejecucion = sensibles.length && servidorAprobaciones ? registrarEjecucion({ tareaId, agentId, sensibles }) : ''
     const args = [
       // stream-json: además del resultado final (última línea, igual que con json) trae cada herramienta usada;
       // el curador de skills (B3) cuenta ahí qué skills se usan
       '-p', '--output-format', 'stream-json', '--verbose', '--max-turns', String(maxTurns),
-      '--allowedTools', `"${tools.join(',')}"`,
+      '--allowedTools', `"${automaticas.join(',')}"`, '--disallowedTools', 'Bash',
+      ...(ejecucion ? ['--permission-prompt-tool', HERRAMIENTA_PERMISOS] : []),
       ...(resume ? ['--resume', resume] : []),
     ]
     // Claude Code instalado dentro de esta carpeta (npm install); si no, el global
@@ -996,7 +1126,8 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     // Con suscripción (Pro/Max) se quita ANTHROPIC_API_KEY: si estuviera, Claude Code cobraría por API sin avisar.
     // Con plan "api" se usa la clave del panel (o la del entorno).
     // AGENTES_CLIENTE / AGENTES_TAREA: buscar_historial solo ve el historial de este cliente (vacío = sin historial)
-    const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: clienteId, AGENTES_TAREA: tareaId }
+    const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: clienteId, AGENTES_TAREA: tareaId,
+      ...(ejecucion ? { AGENTES_EJECUCION: ejecucion, AGENTES_APROBACION_URL: servidorAprobaciones.url, AGENTES_APROBACION_TOKEN: servidorAprobaciones.token, MCP_TOOL_TIMEOUT: String(TIEMPO_APROBACION_MS + 60_000) } : {}) }
     if (planValido(ajustes().planClaude) === 'api') { if (secreto('ANTHROPIC_API_KEY')) envClaude.ANTHROPIC_API_KEY = secreto('ANTHROPIC_API_KEY') }
     else delete envClaude.ANTHROPIC_API_KEY
     const child = lanzar(bin, args, { cwd, shell: true, windowsHide: true, env: envClaude })
@@ -1006,6 +1137,7 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     child.stderr.on('data', d => { err += d })
     child.on('close', (code) => {
       clearTimeout(timer)
+      if (ejecucion) cerrarEjecucion(ejecucion)
       let json = null
       try { json = JSON.parse(out.trim().split(/\r?\n/).pop()) } catch {}
       if (json) registrarUsoClaude(json)
@@ -1476,7 +1608,7 @@ async function runTask(t) {
   writeFileSync(join(cwd, 'tarea.md'), prompt)
 
   for (const m of mensajesDeTarea(t, clienteHistorial(t))) anotar(t, m.rol, m.texto)
-  const opts = { tools: toolsFor(agent, t), agentName: deliveryName(agent), maxTurns: maxTurnsFor(agent), clienteId: clienteHistorial(t), tareaId: t.id }
+  const opts = { tools: toolsFor(agent, t), agentName: deliveryName(agent), maxTurns: maxTurnsFor(agent), clienteId: clienteHistorial(t), tareaId: t.id, agentId: agent.id }
   const res = await runModel(agent, prompt, cwd, opts, t)
   if (cancelados.has(t.id)) return terminarCancelada(t, started)
   let extraCost = 0, extraTurns = 0
@@ -1662,7 +1794,7 @@ async function agentReply(agent, chatId, history, extra = '') {
   const cwd = join(ROOT, 'trabajos', 'chat-' + (chatId === GROUP ? 'grupo' : agent.id))
   mkdirSync(cwd, { recursive: true })
   // En el chat el agente tiene sus mismas herramientas que en las tareas (Magnific, editor, etc.)
-  const res = await runClaude(prompt, cwd, { tools: toolsFor(agent), agentName: deliveryName(agent), maxTurns: Math.max(15, perfilDe(agent).maxTurns || 0) })
+  const res = await runClaude(prompt, cwd, { tools: toolsFor(agent), agentName: deliveryName(agent), maxTurns: Math.max(15, perfilDe(agent).maxTurns || 0), agentId: agent.id })
   let text = (res.json?.result || '').trim()
   if (!text || res.json?.is_error) return 'No pude responder ahora mismo. Intenta de nuevo en un momento.'
   text = await applyAnswers(text)
@@ -1740,9 +1872,9 @@ async function hablarConCoordinador(text) {
   mkdirSync(cwd, { recursive: true })
   chatOcupado = 'Conversación con ' + OWNER
   heartbeat()
-  let res = await runClaude(prompt, cwd, { tools: toolsFor(coord), resume: session })
+  let res = await runClaude(prompt, cwd, { tools: toolsFor(coord), resume: session, agentId: coord.id })
   if (session && (res.code !== 0 || res.json?.is_error) && !res.json?.result) {
-    res = await runClaude(prompt, cwd, { tools: toolsFor(coord) }) // la sesión anterior ya no existe
+    res = await runClaude(prompt, cwd, { tools: toolsFor(coord), agentId: coord.id }) // la sesión anterior ya no existe
   }
   chatOcupado = ''
   heartbeat()
@@ -1878,6 +2010,23 @@ async function main() {
   })
   escucharPropuestas()
 
+  // Aprobaciones (B4): decisiones desde el panel y permisos "siempre"
+  await iniciarServidorAprobaciones()
+  const escucharAprobaciones = () => onSnapshot(query(collection(db, 'aprobaciones'), where('estado', 'in', ['aprobada', 'denegada'])), snap => {
+    snap.docChanges().forEach(ch => {
+      const a = ch.doc.data()
+      if (esperando.has(ch.doc.id)) decidirAprobacion(ch.doc.id, a.estado === 'denegada' ? 'denegar' : (a.alcance || 'una'), a.decididaPor || 'panel')
+    })
+  }, e => {
+    log('Aprobaciones sin acceso (publica las reglas de Firestore); reintento en 1 min:', e.code || e.message)
+    setTimeout(escucharAprobaciones, 60_000)
+  })
+  escucharAprobaciones()
+  // Solicitudes que quedaron abiertas si el motor se apagó esperando: ya nadie las espera
+  getDocs(query(collection(db, 'aprobaciones'), where('estado', '==', 'pendiente'))).then(snap => snap.forEach(d =>
+    updateDoc(d.ref, { estado: 'caducada', decididaPor: 'motor reiniciado', decididaAt: serverTimestamp() }).catch(() => {}))).catch(() => {})
+  onSnapshot(doc(db, 'config', 'permisosAcciones'), d => { permisosSiempre = lista(d.data()?.siempre) }, () => {})
+
   // Ajustes y claves desde el panel: se aplican al cambiar, sin reiniciar el motor
   await escucharPanel()
   await reiniciarTelegram()
@@ -1937,7 +2086,7 @@ async function reiniciarTelegram() {
   }
   const voz = vozMod
   telegram = startTelegram({
-    token, ownerId, log, onMessage: handleTelegram, onReply: handleTelegramReply,
+    token, ownerId, log, onMessage: handleTelegram, onReply: handleTelegramReply, onCallback: onCallbackTelegram,
     transcribe: voz ? (bytes) => voz.transcribe(bytes, log) : null,
   })
 }

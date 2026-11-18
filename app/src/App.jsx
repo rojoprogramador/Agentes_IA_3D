@@ -18,6 +18,7 @@ import Header from './components/Header.jsx'
 import PomodoroWidget from './components/PomodoroWidget.jsx'
 import ActivityWatchdog from './components/ActivityWatchdog.jsx'
 import Tutorial from './components/Tutorial.jsx'
+import AprobacionesPendientes from './components/AprobacionesPendientes.jsx'
 import TaskForm from './components/TaskForm.jsx'
 import { logOnline } from './utils/worklog.js'
 
@@ -333,6 +334,7 @@ export default function App() {
         <Header page={page} setPage={setPage} onLogout={handleLogout} />
         <div className="app-body">
           <main className="app-main">
+            <AprobacionesPendientes />
             {page === 'dashboard' && <Dashboard />}
             {page === 'team'      && <TeamPage />}
             {page === 'tasks'     && <TasksView />}
