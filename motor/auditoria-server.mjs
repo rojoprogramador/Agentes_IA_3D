@@ -16,10 +16,11 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import dns from 'node:dns/promises'
 import { setDefaultResultOrder } from 'node:dns'
+import tls from 'node:tls'
 import { buscarNavegador } from './entregables.mjs'
 import {
   urlAuditable, esIpPrivada, normalizarEnlace, parsearRobots, parsearSitemap, revisarSchema, resumirPageSpeed,
-  resumirAxe, problemasPagina, duplicados, crearCola,
+  resumirAxe, problemasPagina, duplicados, crearCola, resumenCertificado,
 } from './auditoria.mjs'
 
 const require = createRequire(import.meta.url)
@@ -297,6 +298,44 @@ server.tool('capturas',
       }
       return ok({ rutas, uso: 'En el HTML del informe (también en salida/) usa <img src="captura-….jpg">' })
     } catch (e) { return fail(e) } finally { await browser?.close().catch(() => {}) }
+  })
+
+// Diagnóstico de caídas (C3): DNS, respuesta HTTP con tiempos y certificado, medido desde afuera
+function certificado(host) {
+  return new Promise((ok) => {
+    const s = tls.connect({ host, port: 443, servername: host, timeout: 15_000, rejectUnauthorized: false }, () => {
+      const c = s.getPeerCertificate(); const r = { cert: c, autorizado: s.authorized, error: s.authorizationError ? String(s.authorizationError) : '' }; s.end(); ok(r)
+    })
+    s.on('error', e => ok({ cert: null, autorizado: false, error: e.code || e.message }))
+    s.on('timeout', () => { s.destroy(); ok({ cert: null, autorizado: false, error: 'tiempo agotado' }) })
+  })
+}
+
+server.tool('diagnostico_sitio',
+  'Diagnóstico de un sitio caído o lento, medido desde afuera: DNS (A, AAAA, CNAME), respuesta HTTP (código, redirecciones, tiempo) tres veces, y certificado TLS (emisor, vencimiento, si es de confianza).',
+  { url: z.string().min(4) },
+  async ({ url }) => {
+    try {
+      const u = urlAuditable(/^https?:\/\//i.test(url) ? url : `https://${url}`)
+      const h = u.hostname
+      const dnsInfo = {}
+      for (const [k, f] of [['A', 'resolve4'], ['AAAA', 'resolve6'], ['CNAME', 'resolveCname'], ['NS', 'resolveNs']]) {
+        try { dnsInfo[k] = await dns[f](h) } catch (e) { dnsInfo[k] = e.code === 'ENODATA' || e.code === 'ENOTFOUND' ? [] : `error: ${e.code}` }
+      }
+      if (!(dnsInfo.A?.length || dnsInfo.AAAA?.length || dnsInfo.CNAME?.length)) return ok({ host: h, dns: dnsInfo, conclusion: 'El dominio no resuelve: revisa el DNS o si el dominio venció.' })
+      const intentos = []
+      for (let i = 0; i < 3; i++) {
+        const t0 = Date.now()
+        try { const r = await pedir(u.href, { maxBytes: 200_000 }); intentos.push({ estado: r.estado, urlFinal: r.url, ms: Date.now() - t0 }) }
+        catch (e) { intentos.push({ error: String(e.cause?.code || e.message).slice(0, 120), ms: Date.now() - t0 }) }
+        await espera(1000)
+      }
+      let tlsInfo = null
+      if (u.protocol === 'https:') { const c = await certificado(h); tlsInfo = resumenCertificado(c.cert, { autorizado: c.autorizado, error: c.error }) }
+      const caidas = intentos.filter(x => x.error || x.estado >= 500).length
+      return ok({ host: h, dns: dnsInfo, http: intentos, certificado: tlsInfo,
+        conclusion: caidas === 3 ? 'No responde o responde con error del servidor en los 3 intentos' : caidas ? `Intermitente: ${caidas} de 3 intentos fallaron` : 'Responde bien ahora' })
+    } catch (e) { return fail(e) }
   })
 
 await server.connect(new StdioServerTransport())

@@ -74,3 +74,18 @@ test('túnel: lee la URL del quick tunnel', () => {
   assert.equal(urlDeSalida('2026 INF |  https://rapid-fox-12.trycloudflare.com  |'), 'https://rapid-fox-12.trycloudflare.com')
   assert.equal(urlDeSalida('nada'), null)
 })
+
+test('servidor de entrada: con WhatsApp apagado solo atiende /alertas/', async () => {
+  const { crearServidorWebhook } = await import('./whatsapp.mjs')
+  const rutas = []
+  const srv = crearServidorWebhook({ tokenVerificacion: () => 't', appSecret: () => 's', alMensaje: () => {}, whatsappActivo: false,
+    otrasRutas: async (ruta, cuerpo) => { rutas.push([ruta, cuerpo.toString()]); return ruta.endsWith('/bueno') ? 200 : 401 } })
+  await new Promise(r => srv.listen(0, '127.0.0.1', r))
+  const base = `http://127.0.0.1:${srv.address().port}`
+  assert.equal((await fetch(`${base}/whatsapp?hub.mode=subscribe&hub.verify_token=t&hub.challenge=1`)).status, 404)
+  assert.equal((await fetch(`${base}/alertas/kuma/bueno`, { method: 'POST', body: '{"a":1}' })).status, 200)
+  assert.equal((await fetch(`${base}/alertas/kuma/malo`, { method: 'POST', body: '{}' })).status, 401)
+  assert.equal((await fetch(`${base}/alertas/kuma/bueno`)).status, 404) // GET no
+  assert.deepEqual(rutas[0], ['/alertas/kuma/bueno', '{"a":1}'])
+  srv.close()
+})

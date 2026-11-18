@@ -21,6 +21,7 @@ import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
 import { codigoEmparejamiento, puedeResponderDesconocido, crearClienteWhatsApp, crearServidorWebhook } from './whatsapp.mjs'
+import { leerAlertaKuma, tokenValido, clienteDeAlerta, decidir as decidirAlerta, briefIncidente } from './alertas.mjs'
 import { crearTunel } from './tunel.mjs'
 import { herramientasPara, crearEjecutor, crearLlamada, responder } from './herramientas-api.mjs'
 import dnsPromesas from 'node:dns/promises'
@@ -75,7 +76,7 @@ const negocio = loadNegocio()
 
 // Ajustes del motor editables desde el panel (config/motor). Lo que el panel no define sale de negocio.json.
 const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId',
-  'planClaude', 'limitesClaude', 'programadasPrimeroOtros', 'aprendizaje', 'whatsapp', 'email']
+  'planClaude', 'limitesClaude', 'programadasPrimeroOtros', 'aprendizaje', 'whatsapp', 'email', 'alertas']
 let configPanel = {}
 let perfilDueno = {}   // config/perfilDueno: { entradas } (memoria del dueño, se edita en el panel)
 function ajustes() {
@@ -158,7 +159,7 @@ const heartbeat = (extra = {}) =>
   setDoc(doc(db, 'config', 'agentWorker'), {
     online: !stopping, lastSeen: serverTimestamp(), host: os.hostname(), busyWith: ocupadoCon(), skills: installedSkills(),
     motores: estadoMotores, enCurso: [...enCurso.values()].map(x => ({ tarea: x.tarea, motor: x.motor })),
-    fuentesSkills: skillsMgr.fuentes(), curador: resumenCurador(), analitica: resumenAnalitica(), whatsapp: estadoWhatsApp(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
+    fuentesSkills: skillsMgr.fuentes(), curador: resumenCurador(), analitica: resumenAnalitica(), whatsapp: estadoWhatsApp(), alertas: estadoAlertas(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
   }, { merge: true }).then(() => true, e => { log('No pude actualizar el latido:', e.code || e.message); return false })
 
 // Ajustes en uso (panel o negocio.json), para que el panel muestre los valores por defecto
@@ -2191,19 +2192,24 @@ function detenerWhatsApp() {
   whatsapp = null
 }
 
+// Servidor de entrada (B9 + C3): un solo puerto local y un solo túnel para el webhook de WhatsApp y las alertas
 async function reiniciarWhatsApp() {
   const a = ajustes().whatsapp || {}
+  const al = ajustes().alertas || {}
   const puerto = Number(a.puerto) || 8790
-  const firma = JSON.stringify([a.activo, a.phoneNumberId, puerto, a.urlFija, secreto('WHATSAPP_TOKEN'), secreto('WHATSAPP_APP_SECRET'), secreto('CLOUDFLARE_TUNNEL_TOKEN')])
+  const firma = JSON.stringify([a.activo, a.phoneNumberId, puerto, a.urlFija, al.activo, secreto('WHATSAPP_TOKEN'), secreto('WHATSAPP_APP_SECRET'), secreto('CLOUDFLARE_TUNNEL_TOKEN')])
   if (whatsapp?.firma === firma) return
   detenerWhatsApp()
-  if (a.activo !== true) return
+  let waOk = a.activo === true
   const faltan = estadoWhatsApp().faltan
-  if (faltan.length) { log(`WhatsApp desactivado: falta ${faltan.join(', ')} (Agencia → Motor)`); return }
-  const cliente = crearClienteWhatsApp({ token: secreto('WHATSAPP_TOKEN'), phoneNumberId: a.phoneNumberId })
+  if (waOk && faltan.length) { log(`WhatsApp desactivado: falta ${faltan.join(', ')} (Agencia → Motor)`); waOk = false }
+  const alOk = al.activo === true
+  if (!waOk && !alOk) return
+  const cliente = waOk ? crearClienteWhatsApp({ token: secreto('WHATSAPP_TOKEN'), phoneNumberId: a.phoneNumberId }) : null
   const servidor = crearServidorWebhook({
     tokenVerificacion: tokenVerificacionWa, appSecret: () => secreto('WHATSAPP_APP_SECRET'), phoneNumberId: a.phoneNumberId,
-    alMensaje: (m) => atenderWhatsApp(m, cliente), log: (...x) => log(...x),
+    alMensaje: (m) => atenderWhatsApp(m, cliente), log: (...x) => log(...x), whatsappActivo: waOk,
+    otrasRutas: alOk ? recibirAlerta : null,
   })
   await new Promise((ok) => {
     servidor.on('error', e => { log(`✖ WhatsApp: no pude abrir el puerto ${puerto}: ${e.message}`); ok() })
@@ -2212,7 +2218,7 @@ async function reiniciarWhatsApp() {
   if (!servidor.listening) return
   const tunel = crearTunel({ ROOT, puerto, token: secreto('CLOUDFLARE_TUNNEL_TOKEN'), urlFija: a.urlFija || '', log: (...x) => log(...x) })
   whatsapp = { servidor, tunel, cliente, firma, puerto }
-  log(`WhatsApp: webhook en 127.0.0.1:${puerto}/whatsapp`)
+  log(`Entrada de webhooks en 127.0.0.1:${puerto}${waOk ? ' · /whatsapp' : ''}${alOk ? ' · /alertas/kuma' : ''}`)
 }
 
 function escucharWhatsApp() {
@@ -2233,7 +2239,7 @@ async function enviarDesdePanel(m) {
   enviandoWa.add(m.id)
   const ref = doc(db, 'whatsappMensajes', m.id)
   try {
-    if (!whatsapp) throw new Error('WhatsApp no está activo en el motor')
+    if (!whatsapp?.cliente) throw new Error('WhatsApp no está activo en el motor')
     const c = contactosWa.get(m.numero)
     if (!c || c.estado !== 'aprobado') throw new Error('El contacto no está aprobado')
     const ids = await whatsapp.cliente.enviarTexto(m.numero, m.texto)
@@ -2294,6 +2300,69 @@ async function atenderWhatsApp(m, cliente) {
   if (c.clienteId) registrarWhatsAppEnHistorial(c, texto, m.id)
   telegram?.notify(`WhatsApp de ${c.nombre || '+' + m.de}${cl ? ` (${cl.nombre})` : ''}:\n\n${texto.slice(0, 1500)}\n\nResponde desde Agencia → WhatsApp.`)
   log(`WhatsApp: mensaje de ${c.nombre || m.de}${cl ? ` (${cl.nombre})` : ''} a la bandeja`)
+}
+
+// ---------- Alertas de caída (C3): Uptime Kuma → Telegram + tarea al rol DevOps ----------
+const ARCHIVO_TOKEN_ALERTAS = join(ROOT, 'logs', 'alertas-token.txt')
+const ARCHIVO_ABIERTAS = join(ROOT, 'logs', 'alertas-abiertas.json')
+function tokenAlertas() {
+  try { return readFileSync(ARCHIVO_TOKEN_ALERTAS, 'utf8').trim() } catch {}
+  const t = randomBytes(18).toString('hex'); writeFileSync(ARCHIVO_TOKEN_ALERTAS, t); return t
+}
+const leerAbiertas = () => { try { return JSON.parse(readFileSync(ARCHIVO_ABIERTAS, 'utf8')) } catch { return {} } }
+const guardarAbiertas = (o) => writeFileSync(ARCHIVO_ABIERTAS, JSON.stringify(o, null, 1))
+
+function estadoAlertas() {
+  const al = ajustes().alertas || {}
+  if (al.activo !== true) return { activo: false }
+  const ruta = `/alertas/kuma/${tokenAlertas()}`
+  const pub = whatsapp?.tunel?.estado()?.url?.replace(/\/whatsapp$/, '')
+  return { activo: true, urlLocal: `http://127.0.0.1:${whatsapp?.puerto || Number(ajustes().whatsapp?.puerto) || 8790}${ruta}`, urlPublica: pub ? pub + ruta : null, abiertas: Object.keys(leerAbiertas()).length }
+}
+
+async function recibirAlerta(ruta, cuerpo) {
+  const m = ruta.match(/^\/alertas\/kuma\/([^/]+)$/)
+  if (!m || !tokenValido(m[1], tokenAlertas())) { log('Alertas: petición con token inválido (ignorada)'); return 401 }
+  let body = null
+  try { body = JSON.parse(cuerpo.toString('utf8')) } catch { return 400 }
+  const alerta = leerAlertaKuma(body)
+  if (!alerta) { log('Alertas: mensaje de prueba de Uptime Kuma recibido ✔'); return 200 }
+  atenderAlerta(alerta).catch(e => log('Alertas: error', e.message))
+  return 200
+}
+
+async function atenderAlerta(alerta) {
+  const abiertas = leerAbiertas()
+  const ab = abiertas[alerta.monitorId] || null
+  const t = ab ? tasks.get(ab.taskId) : null
+  const accion = decidirAlerta(alerta, ab, { tareaCerrada: ab && (!t || t.estado === 'completada') })
+  if (accion === 'ignorar') return
+  if (accion === 'contar') { ab.caidas = (ab.caidas || 1) + 1; guardarAbiertas(abiertas); return }
+  if (accion === 'resuelta') {
+    const min = Math.round((Date.now() - ab.desde) / 60000)
+    delete abiertas[alerta.monitorId]; guardarAbiertas(abiertas)
+    telegram?.notify(`🟢 "${alerta.nombre}" volvió a responder (estuvo caído ~${min} min). La tarea de diagnóstico sigue abierta por si hay que corregir la causa.`)
+    if (t) updateDoc(doc(db, 'tasks', t.id), { incidenteResueltoAt: serverTimestamp(), lastEditedBy: env.AGENT_EMAIL, lastEditedAt: serverTimestamp() }).catch(() => {})
+    log(`🟢 Alerta resuelta: ${alerta.nombre} (${min} min)`)
+    return
+  }
+  // crear_tarea
+  const cliente = clienteDeAlerta(alerta, [...clientsById.values()])
+  const devops = [...agents.values()].filter(a => a.active !== false && a.rol === 'devops')
+  const agente = devops.find(a => !Array.isArray(a.clientesPermitidos) || !cliente || a.clientesPermitidos.includes(cliente.id)) || null
+  telegram?.notify(`🔴 CAÍDA: "${alerta.nombre}"${cliente ? ` (${cliente.nombre})` : ''}\n${alerta.url}\n${alerta.mensaje}\n\n${agente ? `${agente.name} empieza el diagnóstico.` : 'No hay un agente con el rol DevOps para diagnosticar.'}`)
+  if (!agente) { abiertas[alerta.monitorId] = { taskId: '', desde: Date.now(), caidas: 1 }; guardarAbiertas(abiertas); return }
+  const zona = ZONA()
+  const ref = await addDoc(collection(db, 'tasks'), {
+    tarea: `🔴 Caída: ${alerta.nombre}`, descripcion: briefIncidente(alerta, cliente), asignado: agente.id, asignadoAgente: true,
+    cliente: cliente?.nombre || '', clienteId: cliente?.id || '', prioridad: 'alta', estado: 'pendiente', capacidad: 'general',
+    fechaRequerimiento: fechaLocal(Date.now(), zona), fechaVencimiento: fechaLocal(Date.now(), zona), links: alerta.url, linkTerminada: '',
+    feedback: '', totalTimeSeconds: 0, creadaPor: 'alerta', creadoPor: `Alerta: ${alerta.nombre}`, alertaMonitorId: alerta.monitorId,
+    createdAt: serverTimestamp(), createdBy: env.AGENT_EMAIL, lastEditedBy: env.AGENT_EMAIL, lastEditedAt: serverTimestamp(),
+  }).catch(e => { log('Alertas: no pude crear la tarea:', e.code || e.message); return null })
+  abiertas[alerta.monitorId] = { taskId: ref?.id || '', desde: Date.now(), caidas: 1 }
+  guardarAbiertas(abiertas)
+  log(`🔴 Alerta: ${alerta.nombre} caído → tarea para ${agente.name}`)
 }
 
 async function reiniciarTelegram() {

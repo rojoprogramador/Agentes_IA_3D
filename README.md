@@ -312,6 +312,12 @@ limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-regist
 al abrir una sesión nueva: cierra la terminal (o `wsl --shutdown` desde Windows) antes de encender el motor. La
 primera vez cada herramienta descarga su imagen y Trivy su base (~130 MB, queda en `motor/logs/cache-trivy`).
 
+### Alertas de caída (Uptime Kuma + DevOps)
+
+Activa **Agencia → Motor → Alertas de caída** y pega la URL que te muestra en Uptime Kuma → Notificaciones → Webhook.
+Cuando un sitio cae: aviso por Telegram y una tarea urgente al agente **DevOps y soporte**, que diagnostica desde afuera
+(DNS, HTTP, certificado) y propone el arreglo. Cuando vuelve, te avisa cuánto estuvo caído.
+
 ### Email marketing (Listmonk)
 
 El rol **Email marketing** (tipo *Secuencia de correos*) redacta secuencias y, con **Listmonk** conectado (Agencia →

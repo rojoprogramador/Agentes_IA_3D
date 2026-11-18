@@ -166,6 +166,10 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
 - Email (C2): `motor/email.mjs` + `motor/email-server.mjs` (MCP `agentes-email`: email_listas, email_campanas,
   email_crear_borrador; sin envío). `config/motor.email.listmonkUrl`, secreto `LISTMONK_API`, `clients.email.listas`.
   Rol `email_marketing`, grupo `email`, tipo `secuencia_email`. CRM: MCP de HubSpot/Twenty vía `herramientasExtra`.
+- Alertas (C3): `motor/alertas.mjs` (puro con pruebas). El servidor de entrada de WhatsApp (`crearServidorWebhook`,
+  `otrasRutas`) atiende también `POST /alertas/kuma/<token>` (`logs/alertas-token.txt`); `atenderAlerta`: una tarea por
+  incidente al rol `devops` (`logs/alertas-abiertas.json`), Telegram al caer y al volver. `diagnostico_sitio` en
+  `auditoria-server.mjs`. Ajuste `config/motor.alertas.activo`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
