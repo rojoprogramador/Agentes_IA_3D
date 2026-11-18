@@ -128,7 +128,7 @@ server.tool('run_scan',
         if (!existsSync(join(cache, 'nuclei-templates'))) throw new Error(`No pude descargar las plantillas de nuclei: ${u.err.trim().split('\n').pop()}`)
       }
       registrar({ tipo, objetivo: obj.objetivo, resultado: 'iniciado', imagen: IMAGENES[def.herramienta] })
-      const r = await correr('docker', args, { timeoutMs: (def.vivo ? 20 : 30) * 60_000 })
+      const r = await correr('docker', args, { timeoutMs: (def.activo ? 45 : def.vivo ? 20 : 30) * 60_000 })
       const falla = fallaHerramienta(def.herramienta, r.code, r.err)
       if (falla) { registrar({ tipo, objetivo: obj.objetivo, resultado: 'error', motivo: falla }); return fail(falla) }
       const [archivo, leer] = LECTORES[def.herramienta]

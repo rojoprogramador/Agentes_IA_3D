@@ -1,0 +1,20 @@
+# No van a la imagen: dependencias locales, datos de trabajo, secretos y la app web
+**/node_modules
+app/
+.git
+motor/logs
+motor/trabajos
+motor/entregas
+motor/agencia
+motor/secrets
+motor/modelos
+motor/.claude
+motor/.agents
+motor/.skills-cuarentena
+motor/skills-clientes
+motor/skills-archivo
+motor/.env
+motor/negocio.json
+motor/media-config.json
+**/.env
+**/.env.*

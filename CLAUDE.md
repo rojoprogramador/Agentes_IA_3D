@@ -189,6 +189,9 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
 - Salas (C8): `clients.sala {activa, liderId}`; chat `agentChats/sala-<clienteId>`; `watchChats` las vigila (cada
   minuto); `participantesSala`/`quienResponde` (agencia.mjs, con prueba); `agentReply(..., { cliente, participantes,
   lider })` con ficha del cliente y `buscar_historial` de ese cliente. Panel: selector en la Oficina, `AgentChat` con `sala`.
+- Docker (C9): `motor/Dockerfile` (node:24 slim + chromium + git + cloudflared + tini, usuario `node`), `.dockerignore`,
+  `docker-compose.yml` (volúmenes de logs, trabajos, entregas, skills y sesión de Claude; sin puertos). Guía `docs/vps.md`.
+  Los escaneos de seguridad no corren dentro del contenedor (no se monta el socket de Docker).
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

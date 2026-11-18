@@ -356,6 +356,11 @@ en Google, oportunidades (búsquedas casi en primera página) y acciones.
 El motor entrega la credencial y la propiedad **solo** en tareas de ese cliente: el agente no puede pedir datos de
 otra propiedad.
 
+### Motor en un servidor (Docker)
+
+Para que el motor trabaje 24/7 sin tu PC: `docker compose up -d --build` en un VPS (2 vCPU, 4 GB). Con Claude **Pro** no
+conviene una cola desatendida; usa **Max** (`claude setup-token`) o **clave de API**. Guía completa: `docs/vps.md`.
+
 ### Motores de IA
 
 Cada agente elige su motor en **Agentes → Editar → Modelo de IA**; **Agencia → Modelos de IA** muestra cuáles tienen
