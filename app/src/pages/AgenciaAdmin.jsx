@@ -8,6 +8,7 @@ import AgenciaSkills from './AgenciaSkills.jsx'
 import AgenciaProgramadas from './AgenciaProgramadas.jsx'
 import AgenciaMotor from './AgenciaMotor.jsx'
 import PermisosPicker from '../components/PermisosPicker.jsx'
+import MedidorClaude from '../components/MedidorClaude.jsx'
 import CATALOGO from '../../../roles/catalogo.json'
 import { DEFAULT_DEPARTMENTS, EXAMPLE_TASK_TYPES, FIELD_TYPES, DELIVERY_FORMATS, PROVIDER_PRESETS, slugify, toLines, fromLines } from '../agencia.js'
 
@@ -460,6 +461,9 @@ function MotoresCli() {
         Elige el motor de cada agente en <em>Agentes → Editar → Modelo de IA</em>. Si un motor llega a su límite de uso, la tarea pasa sola
         al siguiente. El orden de respaldo y cuántas tareas hace cada motor en paralelo se ajustan en <em>Agencia → Motor</em>.
       </p>
+      <div style={{ padding: '10px 14px', background: 'var(--bg-2)', borderRadius: 10, marginBottom: 10 }}>
+        <MedidorClaude c={w?.consumoClaude} />
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {fila('antigravity', 'Antigravity · Google AI Pro / Ultra', 'curl -fsSL https://antigravity.google/cli/install.sh | bash  y luego  agy',
           'Reemplazo de Gemini CLI. Usa tu plan de Google y trae modelos Gemini, Claude y GPT-OSS; elige el modelo en cada agente. Solo escribe en salida/ y no usa la terminal. Al instalarlo, desmarca la casilla que deja a Google usar tus interacciones.')}

@@ -234,6 +234,12 @@ sesión en el PC del motor.
 - **Respaldo**: si un motor responde "límite de uso" o se detiene por un permiso, la tarea pasa al siguiente
   conectado que sirva para ella (`negocio.json → respaldo`, por defecto `["claude", "antigravity", "codex", "gemini"]`).
   La tarea guarda qué motor la hizo.
+- **Consumo de Claude**: elige tu plan en **Agencia → Motor** (Pro, Max o clave de API). Con Pro o Max, el motor
+  cuenta sus corridas de Claude en las últimas 5 h y 7 días y, al llegar al umbral (sugerido por plan, ajustable),
+  manda las tareas que pueden hacerse sin Claude a los otros motores **antes** de chocar con el límite. Si Claude
+  responde "límite de uso", queda en pausa hasta la hora de reinicio que indique. Con Pro, las tareas programadas usan
+  primero los otros motores. El medidor aparece en Agencia → Motor, en Modelos de IA y en la Oficina. Con Pro o Max el
+  motor quita `ANTHROPIC_API_KEY` del entorno de Claude Code para que nunca cobre por API sin que lo sepas.
 - **Privacidad**: en la ficha de cada cliente, **Permite modelos gratis** (desmarcado por defecto). Gemini CLI con
   clave gratis y los proveedores marcados "Plan gratis" solo reciben tareas internas o de clientes con ese permiso.
 - Codex, Gemini y Antigravity no leen `motor/CLAUDE.md`: el motor les incluye esas reglas en cada tarea.

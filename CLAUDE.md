@@ -66,6 +66,12 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `detenerTarea` mata todo lo de `trabajos/<id>` con sus hijos (servidores MCP incluidos), `runModel` no pasa al respaldo
   y `terminarCancelada` deja la tarea en `pendiente` con `agentStatus: 'cancelada'`, que `eligible` ignora hasta que
   alguien la reanude (`agentStatus: 'queued'`).
+- Consumo de Claude (`motor/consumo.mjs`, puro con pruebas): `runClaude` registra cada corrida en
+  `logs/consumo-claude.json`; `estadoClaude()` compara con `ajustes().planClaude` / `limitesClaude` (por defecto
+  `LIMITES_PLAN`) y con `bloqueadoHasta` (hora de reinicio del mensaje de límite). `cadenaMotores()` pasa Claude al final
+  si está saturado o si es tarea programada con Pro (`programadasPrimeroOtros`), salvo `soloClaude`; `pump` cuenta cupos
+  con `primerMotor()`. El latido publica `consumoClaude` (`MedidorClaude.jsx`). Plan `api` usa `secretos/ANTHROPIC_API_KEY`;
+  con Pro/Max se borra `ANTHROPIC_API_KEY` del entorno del hijo.
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
 

@@ -3,6 +3,8 @@ import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
 import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import { toLines, fromLines } from '../agencia.js'
+import { LIMITES_PLAN } from '../../../motor/consumo.mjs'
+import MedidorClaude from '../components/MedidorClaude.jsx'
 
 // Configuración del motor desde el panel.
 // - Ajustes (config/motor): el motor los aplica al momento; lo que quede vacío sale de motor/negocio.json.
@@ -20,6 +22,12 @@ const CUPOS = [...MOTORES, { id: 'api', nombre: 'Modelos por API' }]
 export const SECRETOS_MOTOR = [
   { id: 'TELEGRAM_BOT_TOKEN', nombre: 'Token del bot de Telegram', ayuda: 'Créalo con @BotFather en Telegram. El coordinador te responde y te avisa por ahí.' },
   { id: 'GEMINI_API_KEY', nombre: 'Clave de Gemini (Google AI Studio)', ayuda: 'Para el motor Gemini CLI. Sácala en aistudio.google.com → Get API key.' },
+  { id: 'ANTHROPIC_API_KEY', nombre: 'Clave de API de Anthropic', ayuda: 'Solo si el plan de Claude es "Clave de API" (console.anthropic.com). Con Pro o Max el motor la ignora para no cobrarte por API.' },
+]
+const PLANES = [
+  { id: 'pro', nombre: 'Claude Pro' },
+  { id: 'max', nombre: 'Claude Max' },
+  { id: 'api', nombre: 'Clave de API (pago por uso)' },
 ]
 
 const desde = (c = {}, e = {}) => ({
@@ -31,6 +39,10 @@ const desde = (c = {}, e = {}) => ({
   geminiDePago: !!(c.geminiDePago ?? e.geminiDePago),
   telegramOwnerId: c.telegramOwnerId || e.telegramOwnerId || '',
   fuentesSkills: toLines(c.fuentesSkills?.length ? c.fuentesSkills : e.fuentesSkills),
+  planClaude: c.planClaude || e.planClaude || 'pro',
+  tareas5h: String(c.limitesClaude?.tareas5h ?? ''),
+  tareasSemana: String(c.limitesClaude?.tareasSemana ?? ''),
+  programadasPrimeroOtros: (c.programadasPrimeroOtros ?? e.programadasPrimeroOtros) !== false,
 })
 
 export default function AgenciaMotor() {
@@ -71,12 +83,20 @@ export default function AgenciaMotor() {
     const espera = Number(form.esperaDepartamentoMin)
     if (!Number.isFinite(espera) || espera < 0) { showToast('La espera de departamento debe ser un número de minutos', 'error'); return }
     if (form.telegramOwnerId && !/^-?\d+$/.test(form.telegramOwnerId.trim())) { showToast('Tu ID de Telegram es un número', 'error'); return }
+    const limitesClaude = {}
+    for (const k of ['tareas5h', 'tareasSemana']) {
+      if (form[k] === '') continue
+      const n = Number(form[k])
+      if (!Number.isInteger(n) || n < 1) { showToast('Los umbrales de Claude son números enteros mayores que 0 (o vacío para el valor del plan)', 'error'); return }
+      limitesClaude[k] = n
+    }
     setGuardando(true)
     try {
       await setDoc(doc(db, 'config', 'motor'), {
         paralelo, respaldo: form.respaldo, esperaDepartamentoMin: espera,
         zonaHoraria: form.zonaHoraria.trim(), modeloAntigravity: form.modeloAntigravity.trim(), geminiDePago: form.geminiDePago,
         telegramOwnerId: form.telegramOwnerId.trim(), fuentesSkills: fromLines(form.fuentesSkills),
+        planClaude: form.planClaude, limitesClaude, programadasPrimeroOtros: form.programadasPrimeroOtros,
         updatedAt: serverTimestamp(),
       })
       showToast('Guardado. El motor lo aplica al momento')
@@ -143,6 +163,38 @@ export default function AgenciaMotor() {
           Las claves de los modelos por API se cargan en <em>Modelos de IA</em>. El correo y la contraseña del robot siguen en <code>motor/.env</code>:
           el motor los necesita para entrar a Firebase y leer todo lo demás. Las sesiones de Claude Code, Antigravity y Codex se inician en el PC del motor.
         </p>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0, fontSize: 15 }}>Plan de Claude y consumo</h3>
+        <MedidorClaude c={worker?.consumoClaude} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 16 }}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Plan con el que corre Claude Code</label>
+              <select className="form-select" value={form.planClaude} onChange={e => set('planClaude', e.target.value)}>
+                {PLANES.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+              <span style={nota}>Si cambias de plan, solo cambia este valor (y pega la clave arriba si es "Clave de API").</span>
+            </div>
+            {form.planClaude !== 'api' && (
+              <div className="form-group">
+                <label className="form-label">Umbral: corridas de Claude en 5 h / en 7 días</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input className="form-input" type="number" min={1} value={form.tareas5h} onChange={e => set('tareas5h', e.target.value)} placeholder={String(LIMITES_PLAN[form.planClaude]?.tareas5h ?? '')} />
+                  <input className="form-input" type="number" min={1} value={form.tareasSemana} onChange={e => set('tareasSemana', e.target.value)} placeholder={String(LIMITES_PLAN[form.planClaude]?.tareasSemana ?? '')} />
+                </div>
+                <span style={nota}>Al llegar al umbral, las tareas que pueden hacerse sin Claude van primero a los otros motores. Vacío = valor sugerido del plan (estimado: ajústalo según tu experiencia).</span>
+              </div>
+            )}
+          </div>
+          {form.planClaude === 'pro' && (
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+              <input type="checkbox" checked={form.programadasPrimeroOtros} onChange={e => set('programadasPrimeroOtros', e.target.checked)} />
+              Las tareas programadas (desatendidas) usan primero Antigravity, Codex o Gemini y dejan Claude para tu trabajo
+            </label>
+          )}
+        </div>
       </div>
 
       <div className="card">
