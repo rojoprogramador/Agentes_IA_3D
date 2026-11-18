@@ -107,3 +107,14 @@ test('rutas locales: file:// y rutas del PC quedan relativas', async () => {
   assert.equal(limpiarRutasLocales('https://drive.google.com/file/d/1/view', raices), 'https://drive.google.com/file/d/1/view')
   assert.doesNotMatch(limpiarRutasLocales('file:///home/u/proyectos/App/motor/trabajos/abc/salida/z.md', raices), /home/)
 })
+
+test('brief: los campos de la plantilla vacíos se piden deducir; los llenos no', async () => {
+  const { briefSection } = await import('./agencia.mjs')
+  const tipo = { nombre: 'Ideas de posts', plantillaBrief: [{ campo: 'red', etiqueta: 'Red social', requerido: true }, { campo: 'cantidad', etiqueta: 'Cantidad' }] }
+  const s = briefSection({ briefCampos: { cantidad: '3' } }, tipo)
+  assert.match(s, /Cantidad: 3/)
+  assert.match(s, /Campos del brief sin llenar: Red social\. Dedúcelos/)
+  assert.doesNotMatch(s, /sin llenar:.*Cantidad/)
+  assert.doesNotMatch(briefSection({ briefCampos: { red: 'Instagram', cantidad: '3' } }, tipo), /sin llenar/)
+  assert.doesNotMatch(briefSection({}, null), /sin llenar/)
+})

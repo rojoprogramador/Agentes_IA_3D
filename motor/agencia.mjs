@@ -76,6 +76,8 @@ export function briefSection(t, tipo) {
   const etiqueta = (k) => tipo?.plantillaBrief?.find(c => c.campo === k)?.etiqueta || k
   const campos = Object.entries(t.briefCampos || {}).filter(([, v]) => v)
   const criterios = criteriosDe(t, tipo)
+  // Campos de la plantilla que llegaron vacíos (rutinas viejas, tipo cambiado o campos opcionales): se deducen
+  const faltan = lista(tipo?.plantillaBrief).filter(c => c?.campo && !String(t.briefCampos?.[c.campo] ?? '').trim())
   return [
     tipo && `Tipo de tarea: ${tipo.nombre}${tipo.formatoEntrega ? ` (formato de entrega: ${tipo.formatoEntrega})` : ''}`,
     b.objetivo && `Objetivo: ${b.objetivo}`,
@@ -83,6 +85,7 @@ export function briefSection(t, tipo) {
     ...campos.map(([k, v]) => `${etiqueta(k)}: ${v}`),
     b.contexto && `Contexto: ${b.contexto}`,
     criterios.length && `Criterios de aceptación (tu entrega se revisa contra estos):\n${criterios.map(c => '- ' + c).join('\n')}`,
+    faltan.length && `Campos del brief sin llenar: ${faltan.map(c => c.etiqueta || c.campo).join(', ')}. Dedúcelos de la descripción, del título y de la ficha del cliente; si alguno no se puede deducir, decide con buen criterio y explícalo en "Notas" (no detengas la tarea por esto).`,
   ].filter(Boolean).join('\n')
 }
 

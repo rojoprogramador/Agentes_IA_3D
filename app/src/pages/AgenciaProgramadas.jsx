@@ -101,6 +101,7 @@ function RutinaModal({ rutina, onClose }) {
     asignado: p.paraDepartamento ? DEPT_PREFIX + p.departamentoId : (p.asignado || ''),
     cliente: p.cliente || '', tipoTareaId: p.tipoTareaId || '', prioridad: p.prioridad || 'media',
     diasParaVencer: p.diasParaVencer ?? 1, links: p.links || '', permisosExtra: p.permisosExtra || [],
+    briefCampos: p.briefCampos || {},
     frecuencia: r.frecuencia || 'semanal', hora: r.hora || '08:00', dias: r.dias || [1], diaMes: r.diaMes ?? 1,
     activo: rutina.activo !== false,
   })
@@ -128,6 +129,8 @@ function RutinaModal({ rutina, onClose }) {
         asignado: deptId ? '' : f.asignado, paraDepartamento: !!deptId,
         departamentoId: deptId || tipo?.departamento || agente?.departamentoId || CATALOGO.roles[agente?.rol]?.departamento || '',
         cliente: f.cliente, clienteId: cliente?.id || '', tipoTareaId: f.tipoTareaId, prioridad: f.prioridad,
+        // Solo los campos del tipo elegido; los vacíos los deduce el agente de la descripción
+        briefCampos: Object.fromEntries((tipo?.plantillaBrief || []).map(c => [c.campo, String(f.briefCampos[c.campo] ?? '').trim()]).filter(([, v]) => v)),
         diasParaVencer: Math.max(0, Math.min(60, Number(f.diasParaVencer) || 0)),
         permisosExtra: deptId || agente ? f.permisosExtra : [],
       },
@@ -248,6 +251,21 @@ function RutinaModal({ rutina, onClose }) {
               </div>
             </div>
           </div>
+          {tipo?.plantillaBrief?.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 14px', background: 'var(--bg-2)', borderRadius: 10 }}>
+              <span className="form-label" style={{ margin: 0 }}>Brief: {tipo.nombre}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: -6 }}>Se copia a cada tarea que cree la rutina. Si dejas un campo vacío, el agente lo deduce de la descripción.</span>
+              {tipo.plantillaBrief.map(c => (
+                <div className="form-group" key={c.campo}>
+                  <label className="form-label">{c.etiqueta}{c.requerido ? ' *' : ''}</label>
+                  {c.tipo === 'texto_largo'
+                    ? <textarea className="form-textarea" rows={2} value={f.briefCampos[c.campo] ?? ''} onChange={e => set('briefCampos', { ...f.briefCampos, [c.campo]: e.target.value })} />
+                    : <input className="form-input" type={c.tipo === 'numero' ? 'number' : c.tipo === 'url' ? 'url' : 'text'}
+                        value={f.briefCampos[c.campo] ?? ''} onChange={e => set('briefCampos', { ...f.briefCampos, [c.campo]: e.target.value })} />}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">Link de recursos (opcional)</label>
             <input className="form-input" value={f.links} onChange={e => set('links', e.target.value)} placeholder="https://…" />
