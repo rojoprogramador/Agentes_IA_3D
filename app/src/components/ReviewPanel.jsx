@@ -28,6 +28,7 @@ export default function ReviewPanel({ task, onDone }) {
     error: { text: 'El agente tuvo un problema con esta tarea', color: 'var(--danger)' },
     done: { text: 'Entrega lista para tu aprobación', color: 'var(--success)' },
     cancelada: { text: 'Detenida: el agente no la retoma hasta que la reanudes', color: 'var(--text-2)' },
+    esperando_hijas: { text: `Repartida en ${(task.hijas || []).length} subtareas: el coordinador las consolida cuando todas entreguen`, color: 'var(--purple)' },
   }[status] || { text: 'Resultado del agente', color: 'var(--text-2)' }
 
   const showing = verIdx >= 0 && versiones[verIdx] ? versiones[verIdx].output : task.agentOutput
@@ -187,7 +188,7 @@ export default function ReviewPanel({ task, onDone }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
           <textarea className="form-textarea" rows={3} value={nota} onChange={e => setNota(e.target.value)} autoFocus
             placeholder={mode === 'rechazar' ? '¿Por qué se rechaza? El agente la rehace desde cero.' : '¿Qué hay que cambiar?'} />
-          {cliente && (
+          {cliente && !task.tareaPadreId && (
             <label style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center' }}>
               <input type="checkbox" checked={guardarAprendizaje} onChange={e => setGuardarAprendizaje(e.target.checked)} />
               Guardar tal cual en la memoria de {cliente.nombre}

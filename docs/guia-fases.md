@@ -225,3 +225,42 @@ lectores de nmap y nuclei, "una herramienta que falla no es 'sin hallazgos'").
 - ZAP activo contra un nginx local propio: 9 hallazgos (falta CSP, anti-clickjacking, versión del servidor…) en 72 s.
 - La primera prueba de nuclei "terminó sin hallazgos" en 1 s porque no había descargado sus plantillas: ahora se
   descargan a la caché la primera vez y, si una herramienta falla, se reporta como error, nunca como "todo bien".
+
+---
+
+## C6 · Subagentes (tareas hijas en paralelo)
+
+**Qué es.** Cuando el coordinador trabaja una **tarea del Pipeline** grande ("campaña de lanzamiento completa") y la
+reparte, las tareas nuevas son **subtareas** de esa tarea: corren en paralelo con cada especialista y, cuando todas
+entregan, el coordinador la retoma con los resultados y los **consolida** en una sola entrega para ti.
+
+**Recorrido.**
+```
+Tarea padre → coordinador responde con un plan + bloque ```tareas``` (máx. 5)
+  createDelegatedTasks(…, padre): cada hija lleva tareaPadreId, subtarea: true y el cliente del padre
+  padre: agentStatus 'esperando_hijas', hijas: [ids], planCoordinador  (el motor no lo vuelve a tomar todavía)
+Hijas → cada agente trabaja en paralelo (según los cupos de cada motor) → "Espera Aprobación"
+eligible(padre): ¿todas las hijas entregaron (o fueron aprobadas)?  → sí → el coordinador recibe:
+  "## Resultados de tus subtareas (CONSOLIDA)" + su plan + cada entrega → una sola entrega coherente
+  (quitarBloques: al consolidar no puede volver a delegar)
+```
+
+**Dónde mirar.** `createDelegatedTasks`, `seccionHijas` y el bloque C6 de `runTask` en `motor/worker.mjs`;
+`quitarBloques` y `hijasListas` en `motor/agencia.mjs` (con pruebas); estado en `ReviewPanel.jsx`.
+
+**Por qué así.**
+- **Paralelo de verdad**: el copy, el diseño y la estrategia se hacen a la vez, cada uno con su especialista.
+- **Las hijas no delegan ni escriben memoria**: no son coordinadores (no pueden repartir) y no generan "aprendizaje
+  propuesto" ni guardan correcciones en la memoria del cliente; eso lo hace el padre, que ve el conjunto. Así se evita
+  que un árbol de tareas se ramifique sin control o llene la memoria de ruido.
+- **Un solo nivel y máximo 5**: suficiente para una agencia y fácil de seguir en el tablero.
+- **Una hija con error bloquea** al padre (hay que resolverla); una hija **borrada no** (no se queda esperando para
+  siempre).
+
+**Conceptos.**
+- **Orquestador–trabajadores (fan-out / fan-in)**: uno reparte (fan-out), varios trabajan en paralelo y uno junta
+  (fan-in). Es el patrón de los "subagentes" de Claude Code y de Hermes.
+- **Barrera de sincronización**: el padre no sigue hasta que todos llegan (`hijasListas`).
+
+**Verificado.** 1 prueba nueva (bloques y barrera: lista, pendiente, error y borrada). El flujo completo con tareas
+reales necesita las reglas publicadas y un coordinador; queda para la prueba en producción.

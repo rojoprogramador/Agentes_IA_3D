@@ -178,6 +178,10 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   en `logs/cache-nuclei`, `web_activo` zap-full-scan). `alcanceVigente` exige `pruebasActivas`, `contactoEmergencia`,
   `limiteRps` y ventana; `argsDocker(..., { rps })` aplica el límite; lectores `leerNmap` (XML) y `leerNuclei` (JSONL).
   Tipo de tarea `pentest_web`; el informe lleva bloque de firma humana.
+- Subagentes (C6): `createDelegatedTasks(text, origin, padre)` → hijas con `tareaPadreId`/`subtarea` (máx. 5) y el padre
+  en `agentStatus: 'esperando_hijas'` con `hijas` y `planCoordinador`; `eligible` lo retoma cuando `hijasListas`
+  (agencia.mjs); `buildPrompt` agrega `seccionHijas` y al consolidar se usa `quitarBloques`. Las hijas no pasan por
+  `encolarAprendizaje` ni muestran "guardar en memoria".
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
