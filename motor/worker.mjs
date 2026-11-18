@@ -36,6 +36,7 @@ import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
 import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro, quitarBloques, hijasListas as hijasListasPuro, participantesSala, quienResponde, reglaIdioma, limpiarRutasLocales } from './agencia.mjs'
 import { spawn } from 'node:child_process'
+import { tomarCandado, soltarCandado, SALIDA_YA_HAY_MOTOR } from './candado.mjs'
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, readdirSync, statSync, cpSync, copyFileSync } from 'node:fs'
 import { join, dirname, resolve, relative, isAbsolute, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -2057,6 +2058,14 @@ async function hablarConCoordinador(text, canal = 'Telegram') {
 
 // ---------- arranque ----------
 async function main() {
+  // Un solo motor por PC: si ya hay uno, este no inicia sesión ni toma tareas (el launcher deja de reintentar)
+  mkdirSync(join(ROOT, 'logs'), { recursive: true })
+  const candado = tomarCandado(CANDADO)
+  if (!candado.ok) {
+    log(`✖ Ya hay un motor encendido en este PC${candado.pid ? ` (proceso ${candado.pid})` : ''}. No arranco un segundo: tomarían las mismas tareas. Si no hay ninguno, borra motor/logs/motor.lock.`)
+    process.exit(SALIDA_YA_HAY_MOTOR)
+  }
+  process.on('exit', () => soltarCandado(CANDADO))
   log('Conectando con Task Control…')
   const cred = await signInWithEmailAndPassword(auth, env.AGENT_EMAIL, env.AGENT_PASSWORD)
   log(`Sesión iniciada como ${cred.user.email}`)
@@ -2590,6 +2599,8 @@ async function reiniciarTelegram() {
     transcribe: voz ? (bytes) => voz.transcribe(bytes, log) : null,
   })
 }
+
+const CANDADO = join(ROOT, 'logs', 'motor.lock')
 
 async function shutdown() {
   if (stopping) return

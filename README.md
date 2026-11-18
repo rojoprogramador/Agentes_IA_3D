@@ -571,6 +571,8 @@ Los escaneos de seguridad no corren dentro del contenedor (no se le da acceso a 
 - **"No se pudo crear el PDF"**: en Linux/WSL faltan librerías del navegador
   (`sudo apt-get install -y libnss3 libnspr4 libasound2t64`), o define `navegador` en `motor/media-config.json`
   con la ruta de Chrome.
+- **"Ya hay un motor encendido en este PC"**: solo puede correr un motor a la vez (dos tomarían las mismas tareas).
+  Si de verdad no hay otro abierto (se apagó el PC de golpe), borra `motor/logs/motor.lock` y enciéndelo de nuevo.
 - **Telegram no conecta**: algunas redes bloquean api.telegram.org; el motor reintenta solo.
 - **WhatsApp dejó de llegar tras reiniciar**: sin token de Cloudflare la URL `*.trycloudflare.com` cambia en cada
   encendido; vuelve a pegarla en Meta o crea un túnel fijo.
