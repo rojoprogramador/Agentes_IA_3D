@@ -42,7 +42,7 @@ export function startTelegram({ token, ownerId, log, onMessage, onReply, transcr
         log(`Telegram conectado como @${me.username}`)
         break
       } catch (e) {
-        if (/unauthorized|not found/i.test(e.message)) { log('✖ Telegram: el token no es válido. Revisa TELEGRAM_BOT_TOKEN en .env'); return }
+        if (/unauthorized|not found/i.test(e.message)) { log('✖ Telegram: el token no es válido. Revísalo en Agencia → Motor (o TELEGRAM_BOT_TOKEN en .env)'); return }
         log(`Telegram: sin conexión (${e.cause?.code || e.message}), reintento en 30 s`)
         await new Promise(r => setTimeout(r, 30_000))
         if (stopped) return
@@ -58,7 +58,7 @@ export function startTelegram({ token, ownerId, log, onMessage, onReply, transcr
           if (!m?.text && !voice) continue
           const fromId = String(m.from?.id)
           if (!ownerId) {
-            log(`Telegram: mensaje de ${m.from?.first_name} con ID ${fromId}. Pon TELEGRAM_OWNER_ID=${fromId} en .env si eres tú.`)
+            log(`Telegram: mensaje de ${m.from?.first_name} con ID ${fromId}. Si eres tú, pon ${fromId} en Agencia → Motor → Tu ID de Telegram.`)
             await send(m.chat.id, `Hola. Tu ID de Telegram es ${fromId}. Aún no estoy vinculado a ningún dueño.`)
             continue
           }

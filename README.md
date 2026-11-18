@@ -70,7 +70,7 @@ Funciona con **Claude Code** y tu propia suscripción de Claude. Código abierto
 
 | Qué | Para qué |
 |---|---|
-| Bot de Telegram (@BotFather) | Hablar con el coordinador y recibir avisos. |
+| Bot de Telegram (@BotFather) | Hablar con el coordinador y recibir avisos. El token se pega en **Agencia → Motor**. |
 | Google Drive para escritorio o [rclone](https://rclone.org) | Que las entregas lleguen solas a Google Drive. |
 | Gmail, Calendar y Drive conectados en claude.ai | Que el coordinador lea tu correo y calendario. |
 | Chromium o Chrome | Crear los PDF. El motor usa el que ya trae (Playwright) o el de tu sistema. En Linux/WSL necesita `sudo apt-get install -y libnss3 libnspr4 libasound2t64`. |
@@ -78,7 +78,7 @@ Funciona con **Claude Code** y tu propia suscripción de Claude. Código abierto
 | Claves de ElevenLabs, HeyGen o Gemini | Voces y avatares en los videos (skills de HyperFrames). |
 | Google AI Pro o Ultra + [Antigravity CLI](https://antigravity.google) | Motor Antigravity: `curl -fsSL https://antigravity.google/cli/install.sh \| bash` y luego `agy` para iniciar sesión. |
 | Cuenta de ChatGPT | Motor Codex: `cd motor && npx codex login`. |
-| Clave de Google AI Studio | Motor Gemini CLI: `GEMINI_API_KEY=…` en `motor/.env`. Desde junio de 2026 Gemini CLI ya no acepta la cuenta gratis de Google. |
+| Clave de Google AI Studio | Motor Gemini CLI: pégala en **Agencia → Motor → Claves**. Desde junio de 2026 Gemini CLI ya no acepta la cuenta gratis de Google. |
 
 ## Instalación
 
@@ -206,6 +206,10 @@ Las pantallas **Agentes**, **Clientes** y **Agencia** solo las ve el Super Admin
   **solo la lee el motor**: el panel no puede volver a mostrarla. Los agentes que usan herramientas (web, archivos,
   video) siempre van con Claude Code.
 - **Agencia → Skills**: el buscador de skills (abajo).
+- **Agencia → Motor**: claves (Telegram, Gemini) y ajustes del motor: tareas en paralelo por motor, orden de respaldo,
+  espera de las tareas de departamento, zona horaria, tu ID de Telegram y fuentes de skills. El motor los aplica al
+  momento, sin reiniciar. Las claves quedan en la colección `secretos`: el panel las escribe pero **solo el motor puede
+  leerlas**. Lo que no definas ahí sale de `motor/.env` y `motor/negocio.json`.
 
 ### Motores de IA
 
@@ -286,8 +290,8 @@ más de 3 personas.
 | Archivo | Qué guarda | ¿Se sube a GitHub? |
 |---|---|---|
 | `app/.env` | Marca y configuración pública de Firebase | No |
-| `motor/.env` | Usuario robot, Telegram, modelo alterno, opciones de las skills | **Nunca** |
-| `motor/negocio.json` | Tu negocio, tus agentes, `fuentesSkills`, `esperaDepartamentoMin`, `zonaHoraria` (rutinas del coordinador) | No |
+| `motor/.env` | Usuario robot (obligatorio) y, si no las pones en el panel, claves de Telegram y Gemini | **Nunca** |
+| `motor/negocio.json` | Tu negocio y tus agentes. Valores por defecto de los ajustes que no definas en **Agencia → Motor** | No |
 | `motor/media-config.json` | Entregas: `agenciaDrive` (carpeta sincronizada con Drive), `rcloneRemote` (p. ej. `gdrive:Agencia`), `driveLocal` | No |
 | `firestore.rules` | Reglas de seguridad. En el repo lleva `__CORREO_ROBOT__`; `configurar.mjs` pone tu robot | Solo la plantilla |
 | `roles/catalogo.json` | Roles: misión, herramientas y forma de entrega | Sí |

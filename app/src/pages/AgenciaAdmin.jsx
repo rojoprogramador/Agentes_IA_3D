@@ -6,6 +6,7 @@ import Icon from '../components/Icons.jsx'
 import AgenciaTareas from './AgenciaTareas.jsx'
 import AgenciaSkills from './AgenciaSkills.jsx'
 import AgenciaProgramadas from './AgenciaProgramadas.jsx'
+import AgenciaMotor from './AgenciaMotor.jsx'
 import PermisosPicker from '../components/PermisosPicker.jsx'
 import CATALOGO from '../../../roles/catalogo.json'
 import { DEFAULT_DEPARTMENTS, EXAMPLE_TASK_TYPES, FIELD_TYPES, DELIVERY_FORMATS, PROVIDER_PRESETS, slugify, toLines, fromLines } from '../agencia.js'
@@ -51,7 +52,7 @@ export default function AgenciaAdmin() {
         <div>
           <span className="page-eyebrow">Administración</span>
           <h1 className="page-title">Agencia</h1>
-          <p className="page-subtitle">Tareas por departamento, rutinas programadas, tipos de tarea, modelos de IA y skills de los agentes</p>
+          <p className="page-subtitle">Tareas por departamento, rutinas programadas, tipos de tarea, modelos de IA, skills y configuración del motor</p>
         </div>
       </div>
 
@@ -62,10 +63,12 @@ export default function AgenciaAdmin() {
         <button className={`btn btn-sm ${tab === 'tipos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('tipos')}>Tipos de tarea</button>
         <button className={`btn btn-sm ${tab === 'modelos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('modelos')}>Modelos de IA</button>
         <button className={`btn btn-sm ${tab === 'skills' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('skills')}>Skills</button>
+        <button className={`btn btn-sm ${tab === 'motor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('motor')}>Motor</button>
       </div>
 
       {tab === 'tareas' && <AgenciaTareas />}
       {tab === 'skills' && <AgenciaSkills />}
+      {tab === 'motor' && <AgenciaMotor />}
       {tab === 'programadas' && <AgenciaProgramadas />}
 
       {tab === 'departamentos' && (
@@ -444,7 +447,7 @@ function MotoresCli() {
         <div style={{ flex: 1, minWidth: 220 }}>
           <strong style={{ fontSize: 14 }}>{nombre}</strong>
           <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{e ? e.detalle : 'Enciende el motor para ver el estado'}</div>
-          {!e?.conectado && <div style={{ fontSize: 12, marginTop: 4 }}>Para conectarlo, en una terminal de tu PC: <code>{como}</code></div>}
+          {!e?.conectado && <div style={{ fontSize: 12, marginTop: 4 }}>{como.startsWith('pega') ? <>Para conectarlo, {como}.</> : <>Para conectarlo, en una terminal de tu PC: <code>{como}</code></>}</div>}
           {extra && <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 4 }}>{extra}</div>}
         </div>
       </div>
@@ -455,15 +458,15 @@ function MotoresCli() {
       <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0 }}>
         <strong>Motores con herramientas</strong>: como Claude Code, escriben archivos en la carpeta de la tarea (y el motor crea el PDF).
         Elige el motor de cada agente en <em>Agentes → Editar → Modelo de IA</em>. Si un motor llega a su límite de uso, la tarea pasa sola
-        al siguiente (<code>negocio.json → respaldo</code>), y en paralelo trabaja una tarea por motor (<code>negocio.json → paralelo</code>).
+        al siguiente. El orden de respaldo y cuántas tareas hace cada motor en paralelo se ajustan en <em>Agencia → Motor</em>.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {fila('antigravity', 'Antigravity · Google AI Pro / Ultra', 'curl -fsSL https://antigravity.google/cli/install.sh | bash  y luego  agy',
           'Reemplazo de Gemini CLI. Usa tu plan de Google y trae modelos Gemini, Claude y GPT-OSS; elige el modelo en cada agente. Solo escribe en salida/ y no usa la terminal. Al instalarlo, desmarca la casilla que deja a Google usar tus interacciones.')}
         {fila('codex', 'Codex · cuenta de ChatGPT', 'cd motor && npx codex login',
           'Usa tu plan de ChatGPT. Trabaja en un sandbox que solo escribe en la carpeta de la tarea. Revisa en ChatGPT → Configuración → Controles de datos si quieres que no entrene con tus conversaciones.')}
-        {fila('gemini', 'Gemini CLI · clave de API', 'GEMINI_API_KEY=… en motor/.env y reinicia el motor',
-          'Desde junio de 2026 Gemini CLI ya no acepta el plan gratis con cuenta de Google (Google lo pasó a Antigravity CLI). Funciona con una clave de aistudio.google.com. Sin facturación cuenta como plan gratis: solo recibe tareas internas o de clientes con "Permite modelos gratis" (si la clave es de pago, pon geminiDePago: true en negocio.json).')}
+        {fila('gemini', 'Gemini CLI · clave de API', 'pega la clave en Agencia → Motor → Claves',
+          'Desde junio de 2026 Gemini CLI ya no acepta el plan gratis con cuenta de Google (Google lo pasó a Antigravity CLI). Funciona con una clave de aistudio.google.com. Sin facturación cuenta como plan gratis: solo recibe tareas internas o de clientes con "Permite modelos gratis" (si la clave es de pago, márcalo en Agencia → Motor).')}
       </div>
     </div>
   )
