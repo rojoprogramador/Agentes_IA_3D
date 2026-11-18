@@ -294,16 +294,19 @@ export default function TaskForm() {
   // Tiempo trabajado acumulado (incluye la sesión en curso si el timer corre)
   const liveSeconds = (() => {
     if (!isEdit) return 0
-    const base = editingTask.totalTimeSeconds || 0
-    if (editingTask.estado === 'en_progreso' && editingTask.timerStartedAt && !editingTask.timerPaused) {
-      const startMs = editingTask.timerStartedAt.toMillis?.() || editingTask.timerStartedAt.seconds * 1000
+    // La tarea en vivo: el motor suma el tiempo al entregar mientras el modal está abierto
+    const t = (tasks || []).find(x => x.id === editingTask.id) || editingTask
+    const base = t.totalTimeSeconds || 0
+    if (t.estado === 'en_progreso' && t.timerStartedAt && !t.timerPaused) {
+      const startMs = t.timerStartedAt.toMillis?.() || t.timerStartedAt.seconds * 1000
       return base + Math.floor((Date.now() - startMs) / 1000)
     }
     return base
   })()
   const fmtWorked = (s) => {
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
-    return h > 0 ? `${h}h ${m}m` : `${m}m`
+    // Mismo formato que la tabla de Tareas: segundos si no llega a un minuto
+    return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m` : `${Math.round(s)} s`
   }
 
   return (

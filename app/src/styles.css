@@ -1735,3 +1735,8 @@ tbody tr:hover { background: var(--bg-2); }
 .review-col { background: var(--bg-2); border-radius: 10px; padding: 12px 14px; font-size: 13px; min-width: 0; }
 .review-col pre { white-space: pre-wrap; word-break: break-word; font-family: inherit; margin: 0; max-height: 420px; overflow-y: auto; }
 .modal.modal-wide { max-width: 920px; }
+
+/* Menús desplegables con fondo sólido: dentro de .header el blur del vidrio no alcanza la página
+   y con --card semitransparente se leía el texto que hay detrás (QA) */
+[data-theme="light"] .dropdown-menu { background: #ffffff; }
+[data-theme="dark"] .dropdown-menu { background: #1a1a34; }

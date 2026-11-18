@@ -11,7 +11,7 @@ import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth'
 import {
   getFirestore, collection, doc, query, where, onSnapshot, getDoc, getDocs, updateDoc, setDoc, addDoc,
-  serverTimestamp, increment, Timestamp, arrayUnion,
+  serverTimestamp, increment, Timestamp, arrayUnion, runTransaction,
 } from 'firebase/firestore'
 import { startTelegram } from './telegram.mjs'
 import { crearSkills } from './skills.mjs'
@@ -1954,8 +1954,25 @@ async function agentReply(agent, chatId, history, extra = '', { cliente = null, 
 const mentioned = (text) => [...agents.values()].filter(a => a.active !== false &&
   new RegExp('@' + a.name.split(' ')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(text))
 
+// Reclama el mensaje en una transacción: si otro proceso ya lo tomó, este no responde (nunca dos respuestas).
+// Si la transacción falla por otra razón (red), se marca como antes y se responde igual para no dejarlo sin respuesta.
+async function reclamarMensaje(ref) {
+  try {
+    return await runTransaction(db, async tx => {
+      const d = await tx.get(ref)
+      if (!d.exists() || d.data().status !== 'pending') return false
+      tx.update(ref, { status: 'done' })
+      return true
+    })
+  } catch (e) {
+    log('Chat: no pude reclamar el mensaje en transacción:', e.code || e.message)
+    await updateDoc(ref, { status: 'done' }).catch(() => {})
+    return true
+  }
+}
+
 async function handleChat(chatId, msg) {
-  await updateDoc(msg.ref, { status: 'done' }).catch(() => {})
+  if (!(await reclamarMensaje(msg.ref))) return
   chatOcupado = 'Chat con ' + OWNER
   heartbeat()
   try {
@@ -2110,6 +2127,11 @@ async function main() {
     process.exit(ok ? 0 : 1)
   }
 
+  // Qué motores de IA tienen sesión ANTES de escuchar chats y tareas: si no, en los primeros segundos un agente
+  // con Antigravity caería a Claude (respaldo) por creer que Antigravity no está conectado.
+  await actualizarEstadoMotores().catch(() => {})
+  log('Motores: Claude Code' + Object.entries(estadoMotores).map(([k, v]) => ` · ${k}: ${v?.conectado ? 'conectado' : 'sin sesión'}`).join(''))
+
   onSnapshot(collection(db, 'agents'), snap => {
     agents.clear()
     snap.forEach(d => agents.set(d.id, { id: d.id, ...d.data() }))
@@ -2220,8 +2242,8 @@ async function main() {
   setInterval(() => revisarGeo().catch(e => log('GEO:', e.message)), 30 * 60_000)
   arranqueListo = true
 
+  // Otra vez, ya con las claves del panel (secretos) cargadas; luego cada 5 min
   await actualizarEstadoMotores().catch(() => {})
-  log('Motores: Claude Code' + Object.entries(estadoMotores).map(([k, v]) => ` · ${k}: ${v?.conectado ? 'conectado' : 'sin sesión'}`).join(''))
   setInterval(() => actualizarEstadoMotores().catch(() => {}), 5 * 60_000)
   await heartbeat()
   setInterval(heartbeat, 60_000)
