@@ -207,6 +207,30 @@ Si llenas el link de la tarea terminada antes de que el agente trabaje, el agent
   avisa cuando un agente termina o necesita información; respondes a sus preguntas desde ahí mismo. Comandos: `/estado` (qué hace cada agente y cuánto lleva) y
   `/parar <número>` (detiene esa tarea).
 
+
+### WhatsApp Business
+
+El motor recibe mensajes de WhatsApp (Cloud API de Meta) sin servidor propio: abre el webhook en tu PC
+(`127.0.0.1:8790/whatsapp`) y un **túnel de Cloudflare** lo publica.
+
+1. Instala `cloudflared` en el PC del motor ([descargas oficiales](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/);
+   en Linux/WSL basta copiar el binario a `~/.local/bin`).
+2. En Meta for Developers crea una app de tipo Business con el producto WhatsApp. Copia el **Phone number ID**, un
+   **token permanente** (usuario del sistema con `whatsapp_business_messaging`) y el **app secret**.
+3. **Agencia → Motor**: activa WhatsApp, pega el Phone number ID y las claves. El panel te muestra la **URL del webhook**
+   y el **token de verificación**: pégalos en Meta → WhatsApp → Configuración y suscríbete a `messages`.
+4. Sin token de Cloudflare la URL es `*.trycloudflare.com` y **cambia en cada encendido** (para probar). Para una URL
+   fija crea un túnel en Cloudflare Zero Trust y pega su token en **Claves**.
+
+Cuando alguien escribe por primera vez recibe un **código**; tú lo apruebas en **Agencia → WhatsApp** como:
+
+- **Dueño**: habla con el coordinador, igual que por Telegram (también notas de voz).
+- **Cliente** (de una ficha): su mensaje queda en la **bandeja** y en el historial de ese cliente; ningún agente le
+  responde solo, contestas tú desde la bandeja. WhatsApp solo deja escribir libre dentro de las 24 h siguientes a su
+  último mensaje.
+
+Cada mensaje de Meta se verifica con su firma (HMAC con el app secret); sin firma válida se rechaza.
+
 ## Agencia: clientes, departamentos y skills
 
 Las pantallas **Agentes**, **Clientes** y **Agencia** solo las ve el Super Admin.

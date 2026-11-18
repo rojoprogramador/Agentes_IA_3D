@@ -142,6 +142,28 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // WhatsApp (B9). Contactos: el motor registra números nuevos como pendientes; solo un admin aprueba, bloquea y
+    // asigna rol (dueno / cliente). El motor solo puede actualizar la fecha del último mensaje.
+    match /whatsappContactos/{numero} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if isAgentBot() && request.resource.data.estado == 'pendiente'
+        && !('rol' in request.resource.data) && !('clienteId' in request.resource.data);
+      allow update: if isAdmin()
+        || (isAgentBot() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ultimoMensajeAt']));
+      allow delete: if isAdmin();
+    }
+    // Bandeja: el motor guarda lo que llega (y el registro de lo que envía); un admin escribe respuestas
+    // (pendiente_envio) que el motor envía y marca como enviadas o con error.
+    match /whatsappMensajes/{id} {
+      allow read: if isAdmin() || isAgentBot();
+      allow create: if (isAgentBot() && request.resource.data.direccion == 'entrante')
+        || (isAdmin() && request.resource.data.direccion == 'saliente' && request.resource.data.estado == 'pendiente_envio');
+      allow update: if isAgentBot() && resource.data.direccion == 'saliente' && resource.data.estado == 'pendiente_envio'
+        && request.resource.data.estado in ['enviado', 'error']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'error', 'enviadoAt', 'waId']);
+      allow delete: if isAdmin();
+    }
+
     // Config (lista de clientes): leer todos, escribir solo admin
     match /config/{docId} {
       allow read: if isAuth();

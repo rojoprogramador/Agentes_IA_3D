@@ -25,6 +25,9 @@ export const SECRETOS_MOTOR = [
   { id: 'GEMINI_API_KEY', nombre: 'Clave de Gemini (Google AI Studio)', ayuda: 'Para el motor Gemini CLI. Sácala en aistudio.google.com → Get API key.' },
   { id: 'ANTHROPIC_API_KEY', nombre: 'Clave de API de Anthropic', ayuda: 'Solo si el plan de Claude es "Clave de API" (console.anthropic.com). Con Pro o Max el motor la ignora para no cobrarte por API.' },
   { id: 'PAGESPEED_API_KEY', nombre: 'Clave de PageSpeed Insights', ayuda: 'Para el agente de SEO técnico. Es gratis: console.cloud.google.com → APIs → PageSpeed Insights API → Credenciales. Sin clave funciona con un cupo muy bajo.' },
+  { id: 'WHATSAPP_TOKEN', nombre: 'Token de WhatsApp (Meta)', ayuda: 'Token permanente de un usuario del sistema (Meta Business → Usuarios del sistema) con permiso whatsapp_business_messaging.' },
+  { id: 'WHATSAPP_APP_SECRET', nombre: 'App secret de Meta', ayuda: 'Meta for Developers → tu app → Configuración → Básica. El motor lo usa para comprobar que cada mensaje viene de Meta.' },
+  { id: 'CLOUDFLARE_TUNNEL_TOKEN', nombre: 'Token del túnel de Cloudflare (opcional)', ayuda: 'Para una URL fija: Cloudflare → Zero Trust → Networks → Tunnels → crear túnel → token. Apunta el hostname a http://localhost:<puerto>.' },
   { id: 'GOOGLE_ANALITICA_SA', nombre: 'Cuenta de servicio de Google (analítica de la agencia)', ayuda: 'JSON de una cuenta de servicio (Google Cloud → IAM → Cuentas de servicio → Claves). Cada cliente le da acceso de Lector en GA4 y en Search Console. Un cliente también puede tener la suya en su ficha.' },
 ]
 const PLANES = [
@@ -51,6 +54,10 @@ const desde = (c = {}, e = {}) => ({
   aprConClaude: !!(c.aprendizaje?.conClaude ?? e.aprendizaje?.conClaude),
   aprProveedorId: c.aprendizaje?.proveedorId ?? e.aprendizaje?.proveedorId ?? '',
   aprModelo: c.aprendizaje?.modelo ?? e.aprendizaje?.modelo ?? '',
+  waActivo: c.whatsapp?.activo === true,
+  waPhoneNumberId: c.whatsapp?.phoneNumberId || '',
+  waPuerto: String(c.whatsapp?.puerto || 8790),
+  waUrlFija: c.whatsapp?.urlFija || '',
 })
 
 export default function AgenciaMotor() {
@@ -105,12 +112,16 @@ export default function AgenciaMotor() {
       if (!Number.isInteger(n) || n < 1) { showToast('Los umbrales de Claude son números enteros mayores que 0 (o vacío para el valor del plan)', 'error'); return }
       limitesClaude[k] = n
     }
+    const waPuerto = Number(form.waPuerto)
+    if (!Number.isInteger(waPuerto) || waPuerto < 1024 || waPuerto > 65535) { showToast('El puerto de WhatsApp va de 1024 a 65535', 'error'); return }
+    if (form.waPhoneNumberId && !/^\d{6,20}$/.test(form.waPhoneNumberId.trim())) { showToast('El Phone number ID de WhatsApp son solo números (Meta → WhatsApp → Configuración de la API)', 'error'); return }
     const minTurnos = Number(form.aprMinTurnos)
     if (!Number.isInteger(minTurnos) || minTurnos < 1) { showToast('Pasos mínimos para aprender: un número entero mayor que 0', 'error'); return }
     setGuardando(true)
     try {
       await setDoc(doc(db, 'config', 'motor'), {
         aprendizaje: { activo: form.aprActivo, minTurnos, conClaude: form.aprConClaude, proveedorId: form.aprProveedorId, modelo: form.aprModelo.trim() },
+        whatsapp: { ...(panel?.whatsapp || {}), activo: form.waActivo, phoneNumberId: form.waPhoneNumberId.trim(), puerto: waPuerto, urlFija: form.waUrlFija.trim() },
         paralelo, respaldo: form.respaldo, esperaDepartamentoMin: espera,
         zonaHoraria: form.zonaHoraria.trim(), modeloAntigravity: form.modeloAntigravity.trim(), geminiDePago: form.geminiDePago,
         telegramOwnerId: form.telegramOwnerId.trim(), fuentesSkills: fromLines(form.fuentesSkills),
@@ -192,6 +203,44 @@ export default function AgenciaMotor() {
       </div>
 
       <PermisosSiempre />
+
+      <div className="card">
+        <h3 style={{ marginTop: 0, fontSize: 15 }}>WhatsApp Business</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0 }}>
+          El motor recibe los mensajes de WhatsApp (Cloud API de Meta) por un túnel de Cloudflare. Los números nuevos reciben
+          un código y tú decides en <em>Agencia → WhatsApp</em> si son el dueño (habla con el coordinador) o un cliente (su
+          mensaje queda en la bandeja y respondes tú). Claves: token y app secret de Meta, abajo en Claves.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+            <input type="checkbox" checked={form.waActivo} onChange={e => set('waActivo', e.target.checked)} /> Activar WhatsApp
+          </label>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Phone number ID</label>
+              <input className="form-input" value={form.waPhoneNumberId} onChange={e => set('waPhoneNumberId', e.target.value)} placeholder="Meta → WhatsApp → Configuración de la API" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Puerto local del webhook</label>
+              <input className="form-input" type="number" value={form.waPuerto} onChange={e => set('waPuerto', e.target.value)} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">URL fija del túnel (solo con túnel de Cloudflare con token)</label>
+            <input className="form-input" value={form.waUrlFija} onChange={e => set('waUrlFija', e.target.value)} placeholder="https://whatsapp.tudominio.com" />
+            <span style={nota}>Sin token de túnel se usa uno rápido (trycloudflare.com) cuya URL cambia en cada encendido: sirve para probar.</span>
+          </div>
+          {worker?.whatsapp?.activo && (
+            <div style={{ fontSize: 12.5, padding: 10, background: 'var(--bg-2)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {worker.whatsapp.faltan?.length ? <span style={{ color: 'var(--danger)' }}>Falta: {worker.whatsapp.faltan.join(', ')}</span> : null}
+              <span>Túnel: {worker.whatsapp.tunel ? `${worker.whatsapp.tunel.estado}${worker.whatsapp.tunel.cloudflared ? '' : ' (instala cloudflared en el PC del motor)'}` : 'apagado'}</span>
+              {worker.whatsapp.tunel?.url && <span>URL del webhook para Meta: <code>{worker.whatsapp.tunel.url}</code></span>}
+              {worker.whatsapp.tokenVerificacion && <span>Token de verificación para Meta: <code>{worker.whatsapp.tokenVerificacion}</code></span>}
+              <span style={nota}>En Meta → WhatsApp → Configuración: pega la URL y el token, y suscríbete al campo "messages".</span>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="card">
         <h3 style={{ marginTop: 0, fontSize: 15 }}>Aprendizaje propuesto</h3>

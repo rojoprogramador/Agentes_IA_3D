@@ -7,6 +7,7 @@ import AgenciaTareas from './AgenciaTareas.jsx'
 import AgenciaSkills from './AgenciaSkills.jsx'
 import AgenciaProgramadas from './AgenciaProgramadas.jsx'
 import AgenciaMotor from './AgenciaMotor.jsx'
+import AgenciaWhatsApp from './AgenciaWhatsApp.jsx'
 import PermisosPicker from '../components/PermisosPicker.jsx'
 import MedidorClaude from '../components/MedidorClaude.jsx'
 import CATALOGO from '../../../roles/catalogo.json'
@@ -64,12 +65,14 @@ export default function AgenciaAdmin() {
         <button className={`btn btn-sm ${tab === 'tipos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('tipos')}>Tipos de tarea</button>
         <button className={`btn btn-sm ${tab === 'modelos' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('modelos')}>Modelos de IA</button>
         <button className={`btn btn-sm ${tab === 'skills' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('skills')}>Skills</button>
+        <button className={`btn btn-sm ${tab === 'whatsapp' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('whatsapp')}>WhatsApp</button>
         <button className={`btn btn-sm ${tab === 'motor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('motor')}>Motor</button>
       </div>
 
       {tab === 'tareas' && <AgenciaTareas />}
       {tab === 'skills' && <AgenciaSkills />}
       {tab === 'motor' && <AgenciaMotor />}
+      {tab === 'whatsapp' && <AgenciaWhatsApp />}
       {tab === 'programadas' && <AgenciaProgramadas />}
 
       {tab === 'departamentos' && (

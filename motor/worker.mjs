@@ -20,6 +20,8 @@ import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
+import { codigoEmparejamiento, puedeResponderDesconocido, crearClienteWhatsApp, crearServidorWebhook } from './whatsapp.mjs'
+import { crearTunel } from './tunel.mjs'
 import { herramientasPara, crearEjecutor, crearLlamada, responder } from './herramientas-api.mjs'
 import dnsPromesas from 'node:dns/promises'
 import { TIEMPO_APROBACION_MS, HERRAMIENTA_PERMISOS, SENSIBLES_BASE, separarHerramientas, decisionPrevia, nombreAccion, resumenAccion, respuestaPermiso, botonesTelegram, parsearCallback, textoAviso } from './aprobaciones.mjs'
@@ -73,7 +75,7 @@ const negocio = loadNegocio()
 
 // Ajustes del motor editables desde el panel (config/motor). Lo que el panel no define sale de negocio.json.
 const AJUSTES_PANEL = ['paralelo', 'respaldo', 'esperaDepartamentoMin', 'zonaHoraria', 'fuentesSkills', 'modeloAntigravity', 'geminiDePago', 'telegramOwnerId',
-  'planClaude', 'limitesClaude', 'programadasPrimeroOtros', 'aprendizaje']
+  'planClaude', 'limitesClaude', 'programadasPrimeroOtros', 'aprendizaje', 'whatsapp']
 let configPanel = {}
 let perfilDueno = {}   // config/perfilDueno: { entradas } (memoria del dueño, se edita en el panel)
 function ajustes() {
@@ -83,7 +85,7 @@ function ajustes() {
 }
 // Claves que el admin carga en el panel (colección secretos: el panel escribe, solo el motor lee).
 // Si no están en el panel, se usan las de motor/.env.
-const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'PAGESPEED_API_KEY', 'GOOGLE_ANALITICA_SA']
+const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'PAGESPEED_API_KEY', 'GOOGLE_ANALITICA_SA', 'WHATSAPP_TOKEN', 'WHATSAPP_APP_SECRET', 'CLOUDFLARE_TUNNEL_TOKEN']
 const secretosPanel = new Map()
 const deEnv = (k) => (env[k] && !String(env[k]).startsWith('PEGA_AQUI') ? env[k] : '')
 const secreto = (k) => secretosPanel.get(k) || deEnv(k)
@@ -156,7 +158,7 @@ const heartbeat = (extra = {}) =>
   setDoc(doc(db, 'config', 'agentWorker'), {
     online: !stopping, lastSeen: serverTimestamp(), host: os.hostname(), busyWith: ocupadoCon(), skills: installedSkills(),
     motores: estadoMotores, enCurso: [...enCurso.values()].map(x => ({ tarea: x.tarea, motor: x.motor })),
-    fuentesSkills: skillsMgr.fuentes(), curador: resumenCurador(), analitica: resumenAnalitica(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
+    fuentesSkills: skillsMgr.fuentes(), curador: resumenCurador(), analitica: resumenAnalitica(), whatsapp: estadoWhatsApp(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
   }, { merge: true }).then(() => true, e => { log('No pude actualizar el latido:', e.code || e.message); return false })
 
 // Ajustes en uso (panel o negocio.json), para que el panel muestre los valores por defecto
@@ -1900,16 +1902,16 @@ async function handleChat(chatId, msg) {
 const SESSION_FILE = join(ROOT, 'logs', 'coordinador-sesion.json')
 let chatBusy = Promise.resolve()
 
-function handleTelegram(text) {
+function handleTelegram(text, canal = 'Telegram') {
   const cmd = String(text || '').trim().match(/^\/(estado|parar)(?:@\w+)?\s*(.*)$/is)
   if (cmd) return Promise.resolve(cmd[1].toLowerCase() === 'estado' ? comandoEstado() : comandoParar(cmd[2]))
-  // Un mensaje a la vez para conservar el hilo de la conversación
-  const job = chatBusy.then(() => hablarConCoordinador(text))
+  // Un mensaje a la vez para conservar el hilo de la conversación (Telegram y WhatsApp comparten el hilo)
+  const job = chatBusy.then(() => hablarConCoordinador(text, canal))
   chatBusy = job.catch(() => {})
   return job
 }
 
-async function hablarConCoordinador(text) {
+async function hablarConCoordinador(text, canal = 'Telegram') {
   const coord = coordinadorAgent()
   if (!coord) return 'No hay un agente coordinador activo. Crea uno con el rol "Asistente personal y coordinador".'
   if (coord.active === false) return 'Estoy en reserva. Actívame en la Oficina para poder ayudarte.'
@@ -1922,7 +1924,7 @@ async function hablarConCoordinador(text) {
   const prompt = [
     `Eres ${coord.name}, asistente personal de ${OWNER} (${negocio.nombre || 'el negocio'}). ${coord.mission || perfilDe(coord).mision || ''}`,
     businessContext(),
-    `${OWNER} te escribe por Telegram: responde corto, claro y en texto plano (sin tablas ni Markdown pesado).`,
+    `${OWNER} te escribe por ${canal}: responde corto, claro y en texto plano (sin tablas ni Markdown pesado).`,
     teamContext(),
     DELEGATION_RULES,
     `\nMensaje de ${OWNER}:\n${text}`,
@@ -2089,6 +2091,9 @@ async function main() {
   // Ajustes y claves desde el panel: se aplican al cambiar, sin reiniciar el motor
   await escucharPanel()
   await reiniciarTelegram()
+  await reiniciarWhatsApp()
+  escucharWhatsApp()
+  arranqueListo = true
 
   await actualizarEstadoMotores().catch(() => {})
   log('Motores: Claude Code' + Object.entries(estadoMotores).map(([k, v]) => ` · ${k}: ${v?.conectado ? 'conectado' : 'sin sesión'}`).join(''))
@@ -2109,6 +2114,7 @@ function escucharPanel() {
   onSnapshot(doc(db, 'config', 'motor'), d => {
     configPanel = d.data() || {}
     okConfig()
+    if (arranqueListo) reiniciarWhatsApp().catch(e => log('WhatsApp:', e.message))
     heartbeat()
   }, e => { log('Ajustes del panel sin acceso; uso negocio.json:', e.code || e.message); okConfig() })
   onSnapshot(doc(db, 'config', 'perfilDueno'), d => { perfilDueno = d.data() || {} }, () => {})
@@ -2122,6 +2128,7 @@ function escucharPanel() {
     if (previo !== null && firma !== previo) {
       log('Claves actualizadas desde el panel')
       reiniciarTelegram()
+      if (arranqueListo) reiniciarWhatsApp().catch(e => log('WhatsApp:', e.message))
       actualizarEstadoMotores().catch(() => {}).then(() => heartbeat())
     }
     previo = firma
@@ -2131,6 +2138,146 @@ function escucharPanel() {
 
 let vozMod
 let telegramFirma = ''
+let arranqueListo = false
+// ---------- WhatsApp (B9) ----------
+// Webhook en 127.0.0.1:<puerto>/whatsapp publicado con un túnel de Cloudflare. Contactos en whatsappContactos
+// (los aprueba el dueño); bandeja en whatsappMensajes. El dueño habla con el coordinador; los clientes NO hablan con
+// ningún agente: su mensaje queda en la bandeja y en el historial de su cliente, y responde una persona.
+const ARCHIVO_VERIFICACION = join(ROOT, 'logs', 'whatsapp-verificacion.txt')
+let whatsapp = null            // { servidor, tunel, cliente, firma, puerto }
+const contactosWa = new Map()  // numero → contacto
+const vistosWa = new Set()     // ids de mensajes ya procesados (Meta reintenta)
+const avisosWa = new Map()     // numero desconocido → última vez que se le respondió
+
+function tokenVerificacionWa() {
+  const a = ajustes().whatsapp || {}
+  if (a.tokenVerificacion) return String(a.tokenVerificacion)
+  try { return readFileSync(ARCHIVO_VERIFICACION, 'utf8').trim() } catch {}
+  const t = randomBytes(16).toString('hex')
+  writeFileSync(ARCHIVO_VERIFICACION, t)
+  return t
+}
+
+function estadoWhatsApp() {
+  const a = ajustes().whatsapp || {}
+  return {
+    activo: a.activo === true, phoneNumberId: a.phoneNumberId || '', puerto: whatsapp?.puerto || Number(a.puerto) || 8790,
+    tokenVerificacion: a.activo ? tokenVerificacionWa() : '', tunel: whatsapp?.tunel?.estado() || null,
+    faltan: ['WHATSAPP_TOKEN', 'WHATSAPP_APP_SECRET'].filter(k => !secreto(k)).concat(a.phoneNumberId ? [] : ['phoneNumberId']),
+  }
+}
+
+function detenerWhatsApp() {
+  try { whatsapp?.tunel?.parar() } catch {}
+  try { whatsapp?.servidor?.close() } catch {}
+  whatsapp = null
+}
+
+async function reiniciarWhatsApp() {
+  const a = ajustes().whatsapp || {}
+  const puerto = Number(a.puerto) || 8790
+  const firma = JSON.stringify([a.activo, a.phoneNumberId, puerto, a.urlFija, secreto('WHATSAPP_TOKEN'), secreto('WHATSAPP_APP_SECRET'), secreto('CLOUDFLARE_TUNNEL_TOKEN')])
+  if (whatsapp?.firma === firma) return
+  detenerWhatsApp()
+  if (a.activo !== true) return
+  const faltan = estadoWhatsApp().faltan
+  if (faltan.length) { log(`WhatsApp desactivado: falta ${faltan.join(', ')} (Agencia → Motor)`); return }
+  const cliente = crearClienteWhatsApp({ token: secreto('WHATSAPP_TOKEN'), phoneNumberId: a.phoneNumberId })
+  const servidor = crearServidorWebhook({
+    tokenVerificacion: tokenVerificacionWa, appSecret: () => secreto('WHATSAPP_APP_SECRET'), phoneNumberId: a.phoneNumberId,
+    alMensaje: (m) => atenderWhatsApp(m, cliente), log: (...x) => log(...x),
+  })
+  await new Promise((ok) => {
+    servidor.on('error', e => { log(`✖ WhatsApp: no pude abrir el puerto ${puerto}: ${e.message}`); ok() })
+    servidor.listen(puerto, '127.0.0.1', ok)
+  })
+  if (!servidor.listening) return
+  const tunel = crearTunel({ ROOT, puerto, token: secreto('CLOUDFLARE_TUNNEL_TOKEN'), urlFija: a.urlFija || '', log: (...x) => log(...x) })
+  whatsapp = { servidor, tunel, cliente, firma, puerto }
+  log(`WhatsApp: webhook en 127.0.0.1:${puerto}/whatsapp`)
+}
+
+function escucharWhatsApp() {
+  const contactos = () => onSnapshot(collection(db, 'whatsappContactos'), snap => {
+    contactosWa.clear(); snap.forEach(d => contactosWa.set(d.id, { id: d.id, ...d.data() }))
+  }, e => { log('WhatsApp: contactos sin acceso (publica las reglas de Firestore); reintento en 1 min:', e.code || e.message); setTimeout(contactos, 60_000) })
+  contactos()
+  // Respuestas que una persona escribió en el panel → se envían
+  const salientes = () => onSnapshot(query(collection(db, 'whatsappMensajes'), where('estado', '==', 'pendiente_envio')), snap => {
+    snap.forEach(d => enviarDesdePanel({ id: d.id, ...d.data() }))
+  }, e => { log('WhatsApp: bandeja sin acceso; reintento en 1 min:', e.code || e.message); setTimeout(salientes, 60_000) })
+  salientes()
+}
+
+const enviandoWa = new Set()
+async function enviarDesdePanel(m) {
+  if (enviandoWa.has(m.id)) return
+  enviandoWa.add(m.id)
+  const ref = doc(db, 'whatsappMensajes', m.id)
+  try {
+    if (!whatsapp) throw new Error('WhatsApp no está activo en el motor')
+    const c = contactosWa.get(m.numero)
+    if (!c || c.estado !== 'aprobado') throw new Error('El contacto no está aprobado')
+    const ids = await whatsapp.cliente.enviarTexto(m.numero, m.texto)
+    await updateDoc(ref, { estado: 'enviado', enviadoAt: serverTimestamp(), waId: ids[0] || '' })
+    if (c.clienteId) registrarWhatsAppEnHistorial(c, `Respuesta de ${m.enviadoPor || 'la agencia'}: ${m.texto}`, `out-${m.id}`)
+    log(`WhatsApp: respuesta enviada a ${c.nombre || m.numero}`)
+  } catch (e) {
+    await updateDoc(ref, { estado: 'error', error: String(e.message).slice(0, 300) }).catch(() => {})
+  } finally { enviandoWa.delete(m.id) }
+}
+
+function registrarWhatsAppEnHistorial(c, texto, id) {
+  try { historialDb()?.registrar({ clienteId: c.clienteId, tareaId: `whatsapp-${id}`, tarea: `WhatsApp con ${c.nombre || c.id}`, agenteId: '', rol: 'whatsapp', texto }) } catch {}
+}
+
+async function atenderWhatsApp(m, cliente) {
+  if (vistosWa.has(m.id)) return
+  vistosWa.add(m.id)
+  if (vistosWa.size > 2000) vistosWa.delete(vistosWa.values().next().value)
+  const c = contactosWa.get(m.de)
+  // Desconocido: código de emparejamiento (una respuesta por hora como mucho)
+  if (!c || c.estado === 'pendiente') {
+    if (!puedeResponderDesconocido(avisosWa.get(m.de))) return
+    avisosWa.set(m.de, Date.now())
+    const codigo = c?.codigo || codigoEmparejamiento()
+    if (!c) {
+      try { await setDoc(doc(db, 'whatsappContactos', m.de), { numero: m.de, nombre: m.nombre, estado: 'pendiente', codigo, creadoAt: serverTimestamp(), primerMensaje: String(m.texto || '').slice(0, 300) }) }
+      catch (e) { log('WhatsApp: no pude registrar el contacto (¿reglas publicadas?):', e.code || e.message); return }
+      telegram?.notify(`WhatsApp: ${m.nombre || 'alguien'} (+${m.de}) pide acceso. Código ${codigo}. Apruébalo en Agencia → WhatsApp si lo conoces.`)
+      log(`WhatsApp: número nuevo +${m.de} (${m.nombre}) → código ${codigo}`)
+    }
+    await cliente.enviarTexto(m.de, `Hola${m.nombre ? ' ' + m.nombre : ''}. Este número es atendido por ${negocio.nombre || 'una agencia'}. Tu código es ${codigo}: compártelo con quien te dio este número para que apruebe tu acceso.`).catch(e => log('WhatsApp:', e.message))
+    return
+  }
+  if (c.estado !== 'aprobado') return // bloqueado
+  updateDoc(doc(db, 'whatsappContactos', m.de), { ultimoMensajeAt: Timestamp.fromMillis(m.ts) }).catch(() => {})
+  cliente.marcarLeido(m.id)
+
+  let texto = m.texto || ''
+  if (m.tipo === 'audio' && m.audioId) {
+    if (vozMod === undefined) { try { vozMod = await import('./voz.mjs') } catch { vozMod = null } }
+    try { texto = vozMod ? await vozMod.transcribe(await cliente.descargarMedio(m.audioId), log) : '' } catch (e) { log('WhatsApp: no pude transcribir el audio:', e.message) }
+    if (!texto) { await cliente.enviarTexto(m.de, 'No logré escuchar la nota de voz. ¿Me la escribes?').catch(() => {}); return }
+  }
+  if (!texto) { await cliente.enviarTexto(m.de, 'Por ahora solo leo texto y notas de voz.').catch(() => {}); return }
+
+  if (c.rol === 'dueno') {
+    const respuesta = await handleTelegram(texto, 'WhatsApp')
+    await cliente.enviarTexto(m.de, respuesta).catch(e => log('WhatsApp: no pude responder al dueño:', e.message))
+    return
+  }
+  // Cliente: a la bandeja (nadie responde solo) y al historial de su cliente
+  const cl = clientsById.get(c.clienteId)
+  await addDoc(collection(db, 'whatsappMensajes'), {
+    numero: m.de, nombre: c.nombre || m.nombre, direccion: 'entrante', texto: texto.slice(0, 8000), clienteId: c.clienteId || '',
+    cliente: cl?.nombre || '', ts: Timestamp.fromMillis(m.ts), estado: 'recibido', waId: m.id,
+  }).catch(e => log('WhatsApp: no pude guardar el mensaje (¿reglas publicadas?):', e.code || e.message))
+  if (c.clienteId) registrarWhatsAppEnHistorial(c, texto, m.id)
+  telegram?.notify(`WhatsApp de ${c.nombre || '+' + m.de}${cl ? ` (${cl.nombre})` : ''}:\n\n${texto.slice(0, 1500)}\n\nResponde desde Agencia → WhatsApp.`)
+  log(`WhatsApp: mensaje de ${c.nombre || m.de}${cl ? ` (${cl.nombre})` : ''} a la bandeja`)
+}
+
 async function reiniciarTelegram() {
   const token = secreto('TELEGRAM_BOT_TOKEN')
   const ownerId = String(ajustes().telegramOwnerId || deEnv('TELEGRAM_OWNER_ID') || '')
@@ -2155,6 +2302,7 @@ async function shutdown() {
   stopping = true
   log('Apagando motor…')
   telegram?.stop()
+  detenerWhatsApp()
   matarTodos()
   await heartbeat({ online: false })
   process.exit(0)

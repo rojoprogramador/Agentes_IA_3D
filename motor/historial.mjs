@@ -15,7 +15,7 @@ import { CREDENCIAL } from './memoria.mjs'
 
 // Clientes: id de Firestore. Tareas internas de la agencia (sin cliente) van a este valor fijo.
 export const INTERNO = '__interno__'
-export const ROLES = ['brief', 'entrega', 'revision', 'correccion', 'pregunta', 'respuesta']
+export const ROLES = ['brief', 'entrega', 'revision', 'correccion', 'pregunta', 'respuesta', 'whatsapp']
 const MAX_TEXTO = 20000
 
 const ESQUEMA = `
