@@ -245,6 +245,21 @@ Las pantallas **Agentes**, **Clientes** y **Agencia** solo las ve el Super Admin
   momento, sin reiniciar. Las claves quedan en la colección `secretos`: el panel las escribe pero **solo el motor puede
   leerlas**. Lo que no definas ahí sale de `motor/.env` y `motor/negocio.json`.
 
+### SEO técnico y QA
+
+Dos roles miden sitios web con herramientas reales (servidor MCP `agentes-auditoria`, solo de lectura y solo
+sitios públicos) y entregan un informe en PDF con vista previa:
+
+- **SEO técnico** (tipo de tarea *Auditoría SEO técnica*): PageSpeed Insights (Core Web Vitals de laboratorio y de
+  usuarios reales), rastreo del sitio (title, description, H1, canonical, redirecciones, enlaces rotos, duplicados),
+  robots.txt y sitemaps, y datos estructurados (JSON-LD, Open Graph).
+- **QA** (tipo *QA de sitio o landing*): enlaces rotos, errores de JavaScript, contenido mixto, accesibilidad con
+  axe-core (WCAG 2.2 AA) en móvil y escritorio, y capturas.
+
+Cada hallazgo lleva la cifra medida y la herramienta que la midió: el agente no inventa números. Para PageSpeed
+carga una clave gratis en **Agencia → Motor → Clave de PageSpeed Insights** (sin clave el cupo diario es mínimo).
+El rastreo va despacio (una página a la vez) para no cargar el servidor del cliente.
+
 ### Motores de IA
 
 Cada agente elige su motor en **Agentes → Editar → Modelo de IA**; **Agencia → Modelos de IA** muestra cuáles tienen

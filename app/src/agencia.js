@@ -70,6 +70,27 @@ export const EXAMPLE_TASK_TYPES = [
     checklist: ['El MP4 final existe y se reproduce', 'No quedan silencios largos ni tomas falsas'],
     revisor: null, formatoEntrega: 'video',
   },
+  {
+    id: 'auditoria_seo', departamento: 'marketing', rol: 'seo_tecnico', nombre: 'Auditoría SEO técnica (PDF)',
+    descripcion: 'Velocidad, indexación, sitemap, datos estructurados y SEO on-page medidos, con plan de acción.',
+    plantillaBrief: [
+      { campo: 'url', etiqueta: 'Sitio a auditar (URL)', tipo: 'texto', requerido: true },
+      { campo: 'paginasClave', etiqueta: 'Páginas clave (servicios, landing)', tipo: 'texto_largo', requerido: false },
+      { campo: 'objetivo', etiqueta: 'Objetivo (más llamadas, posicionar un servicio…)', tipo: 'texto', requerido: false },
+    ],
+    checklist: ['Cada hallazgo trae su evidencia medida y la herramienta', 'No hay cifras inventadas: lo que falló se dice', 'Hallazgos priorizados con quién los arregla', 'Resumen entendible para el dueño del negocio'],
+    revisor: 'revisor_calidad', formatoEntrega: 'archivos', herramientas: ['auditoria', 'salida'],
+  },
+  {
+    id: 'qa_sitio', departamento: 'desarrollo', rol: 'qa', nombre: 'QA de sitio o landing (PDF)',
+    descripcion: 'Enlaces rotos, errores, accesibilidad y vista en móvil y escritorio antes de publicar.',
+    plantillaBrief: [
+      { campo: 'url', etiqueta: 'URL a probar', tipo: 'texto', requerido: true },
+      { campo: 'cambios', etiqueta: 'Qué cambió o qué revisar en especial', tipo: 'texto_largo', requerido: false },
+    ],
+    checklist: ['Cada fallo dice página, qué pasa, evidencia y prioridad', 'Incluye capturas de móvil y escritorio', 'Lista lo que hay que revisar a mano en accesibilidad'],
+    revisor: null, formatoEntrega: 'archivos', herramientas: ['auditoria', 'salida'],
+  },
 ]
 
 export const FIELD_TYPES = [
@@ -138,6 +159,7 @@ export const PERMISOS = [
   { id: 'entregas', label: 'Guardar imágenes y archivos (servidor de medios)' },
   { id: 'editor_video', label: 'Editar video (servidor de medios)' },
   { id: 'magnific_imagenes', label: 'Generar imágenes con Magnific (de pago)' },
+  { id: 'auditoria', label: 'Auditar sitios web (PageSpeed, rastreo, accesibilidad, schema)', ayuda: 'Solo sitios públicos; no modifica nada' },
   { id: 'gmail', label: 'Leer tu Gmail y crear borradores', sensible: true },
   { id: 'calendario', label: 'Ver y crear eventos en tu calendario', sensible: true },
 ]

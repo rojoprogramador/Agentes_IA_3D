@@ -119,6 +119,13 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `onCallback`) y espera 5 min (`caducada`). Decisión desde el panel (`AprobacionesPendientes.jsx`, en App.jsx) o
   Telegram. "Siempre" → `config/permisosAcciones.siempre` (el robot puede escribir ese doc). `MCP_TOOL_TIMEOUT` se sube
   para que la espera no corte la llamada. Al arrancar, las `pendiente` viejas pasan a `caducada`.
+- SEO técnico y QA (B5): `motor/auditoria.mjs` (puro con pruebas: `urlAuditable`/`esIpPrivada` anti-SSRF, robots,
+  sitemap, `revisarSchema`, `resumirPageSpeed`, `resumirAxe`, `problemasPagina`, `crearCola`) y
+  `motor/auditoria-server.mjs` (MCP `agentes-auditoria`: pagespeed, rastrear_sitio, accesibilidad, robots_y_sitemap,
+  datos_estructurados, capturas). Usa el Chromium de `buscarNavegador` + puppeteer-core y `axe-core`; cada URL y
+  redirección se resuelve por DNS y se rechaza si es privada; IPv4 primero (WSL). `runClaude` lo declara con
+  `--mcp-config logs/mcp-auditoria.json` si hay herramientas `mcp__agentes-auditoria__*` y pasa `PAGESPEED_API_KEY`
+  (secreto del panel). Grupo `auditoria` (solo Claude), roles `seo_tecnico` y `qa`, tipos `auditoria_seo` y `qa_sitio`.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.

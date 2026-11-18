@@ -24,6 +24,7 @@ export const SECRETOS_MOTOR = [
   { id: 'TELEGRAM_BOT_TOKEN', nombre: 'Token del bot de Telegram', ayuda: 'Créalo con @BotFather en Telegram. El coordinador te responde y te avisa por ahí.' },
   { id: 'GEMINI_API_KEY', nombre: 'Clave de Gemini (Google AI Studio)', ayuda: 'Para el motor Gemini CLI. Sácala en aistudio.google.com → Get API key.' },
   { id: 'ANTHROPIC_API_KEY', nombre: 'Clave de API de Anthropic', ayuda: 'Solo si el plan de Claude es "Clave de API" (console.anthropic.com). Con Pro o Max el motor la ignora para no cobrarte por API.' },
+  { id: 'PAGESPEED_API_KEY', nombre: 'Clave de PageSpeed Insights', ayuda: 'Para el agente de SEO técnico. Es gratis: console.cloud.google.com → APIs → PageSpeed Insights API → Credenciales. Sin clave funciona con un cupo muy bajo.' },
 ]
 const PLANES = [
   { id: 'pro', nombre: 'Claude Pro' },
