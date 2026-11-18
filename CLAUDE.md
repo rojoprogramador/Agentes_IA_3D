@@ -200,6 +200,10 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   tareas y chats; sin cliente el prompt dice "tarea interna" (ya no se asume el negocio como cliente);
   `limpiarRutasLocales` quita file:// y rutas del PC de la respuesta de cualquier motor; `totalTimeSeconds` se suma
   hasta el final de la entrega; `teamContext` incluye las tareas `en_espera` (snapshot `enEspera`) con totales.
+- Un solo motor por PC (`motor/candado.mjs`, con pruebas): `main()` toma `logs/motor.lock` (PID, creación atómica)
+  antes de iniciar sesión; si otro motor vivo lo tiene, sale con código 3 y `iniciar-agentes.sh/.bat` dejan de reintentar.
+  Un candado de un proceso muerto o con el mismo PID (Docker) se reemplaza. Para reiniciar en tmux usa
+  `tmux send-keys -t motor C-c` (matar la sesión deja vivos el `sg` y el motor).
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
