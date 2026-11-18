@@ -26,15 +26,37 @@ export default function ReviewPanel({ task, onDone }) {
     needs_info: { text: 'El agente necesita información para continuar', color: 'var(--warning)' },
     error: { text: 'El agente tuvo un problema con esta tarea', color: 'var(--danger)' },
     done: { text: 'Entrega lista para tu aprobación', color: 'var(--success)' },
+    cancelada: { text: 'Detenida: el agente no la retoma hasta que la reanudes', color: 'var(--text-2)' },
   }[status] || { text: 'Resultado del agente', color: 'var(--text-2)' }
 
   const showing = verIdx >= 0 && versiones[verIdx] ? versiones[verIdx].output : task.agentOutput
-  const body = status === 'needs_info' ? task.agentQuestion : status === 'error' ? task.agentError : showing
+  const body = status === 'needs_info' ? task.agentQuestion : (status === 'error' || status === 'cancelada') ? task.agentError : showing
   const cliente = clientDocs.find(c => c.id === task.clienteId) || clientDocs.find(c => c.nombre === task.cliente)
   const tipo = taskTypes.find(t => t.id === task.tipoTareaId)
   const agente = agents.find(a => a.id === task.asignado)
   const rev = task.revisionAgente
   const canDecide = isAdmin && task.estado === 'en_espera' && status === 'done'
+
+  // Detener: el motor mata el proceso del agente y deja la tarea en pendiente (agentStatus 'cancelada')
+  const puedeDetener = isAdmin || task.createdBy === user?.email
+  const trabajando = ['running', 'reviewing', 'queued'].includes(status) && task.estado !== 'completada'
+  const detener = async () => {
+    if (!confirm('¿Detener esta tarea? El agente deja de trabajar ahora y lo que alcanzó a hacer queda guardado.')) return
+    setBusy(true)
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), { cancelar: true, cancelarPor: userProfile?.name || user.email, lastEditedBy: user.email, lastEditedAt: serverTimestamp() })
+      showToast('Deteniendo… (el motor debe estar encendido)', 'info')
+    } catch (e) { console.error(e); showToast('No se pudo detener', 'error') }
+    setBusy(false)
+  }
+  const reanudar = async () => {
+    setBusy(true)
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), { agentStatus: 'queued', cancelar: false, agentError: '', lastEditedBy: user.email, lastEditedAt: serverTimestamp() })
+      showToast('Reanudada: el agente la retoma en cuanto tenga cupo')
+    } catch (e) { console.error(e); showToast('No se pudo reanudar', 'error') }
+    setBusy(false)
+  }
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(body || ''); showToast('Copiado') } catch { showToast('No se pudo copiar', 'error') }
@@ -105,6 +127,14 @@ export default function ReviewPanel({ task, onDone }) {
             </select>
           )}
           {body && <button type="button" className="btn btn-secondary btn-sm" onClick={copy}>Copiar</button>}
+          {puedeDetener && trabajando && (
+            <button type="button" className="btn btn-secondary btn-sm" style={{ color: 'var(--danger)' }} disabled={busy || task.cancelar} onClick={detener}>
+              {task.cancelar ? 'Deteniendo…' : 'Detener'}
+            </button>
+          )}
+          {puedeDetener && status === 'cancelada' && (
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={reanudar}>Reanudar</button>
+          )}
         </span>
       </div>
 
