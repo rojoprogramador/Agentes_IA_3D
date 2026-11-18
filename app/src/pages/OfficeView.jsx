@@ -57,7 +57,8 @@ function taskElapsed(task, now) {
 
 
 export default function OfficeView() {
-  const { user, userProfile, users, tasks, agents, clients, isAdmin, isSuperAdmin, showToast, openEditTask } = useApp()
+  const { user, userProfile, users, tasks, agents, clients, clientDocs = [], isAdmin, isSuperAdmin, showToast, openEditTask } = useApp()
+  const salas = clientDocs.filter(c => c.sala?.activa) // C8: salas por cliente
   const containerRef = useRef(null)
   const sceneRef = useRef(null)
   const [now, setNow] = useState(Date.now())
@@ -303,6 +304,12 @@ export default function OfficeView() {
                 <Icon name="users" size={14} /> Chat de agentes
               </button>
             )}
+            {isAdmin && salas.length > 0 && (
+              <select className="form-select" style={{ width: 'auto', height: 32, fontSize: 13 }} value="" onChange={e => { const c = salas.find(x => x.id === e.target.value); if (c) setChatWith({ sala: c }) }}>
+                <option value="">Salas de clientes…</option>
+                {salas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            )}
             {(me.status === 'cafe' || me.status === 'bano') ? (
               <button className="btn btn-primary btn-sm" onClick={() => setBreak(me, null)}>
                 <Icon name="play" size={13} /> Ya volví
@@ -467,9 +474,10 @@ export default function OfficeView() {
           </div>
           {chatWith && (
             <AgentChat
-              key={chatWith === 'grupo' ? 'grupo' : chatWith.id}
-              chatId={chatWith === 'grupo' ? 'grupo' : chatWith.id}
-              agent={chatWith === 'grupo' ? null : chatWith}
+              key={chatWith === 'grupo' ? 'grupo' : chatWith.sala ? `sala-${chatWith.sala.id}` : chatWith.id}
+              chatId={chatWith === 'grupo' ? 'grupo' : chatWith.sala ? `sala-${chatWith.sala.id}` : chatWith.id}
+              agent={chatWith === 'grupo' || chatWith.sala ? null : chatWith}
+              sala={chatWith.sala || null}
               agents={agents} engineOn={engineOn} user={user} userProfile={userProfile}
               onClose={() => setChatWith(null)}
             />

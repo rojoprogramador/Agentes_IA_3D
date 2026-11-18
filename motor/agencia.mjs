@@ -66,3 +66,20 @@ export const quitarBloques = (t) => String(t || '').replace(/```(tareas|programa
 export function hijasListas(ids, obtener) {
   return lista(ids).every(id => { const h = obtener(id); return !h || (['en_espera', 'completada'].includes(h.estado) && h.agentStatus !== 'error') })
 }
+
+// ---------- Salas por cliente (C8) ----------
+// Participantes: agentes activos que atienden a ese cliente (sin lista de clientes = atienden a todos) y, si el cliente
+// tiene departamentos, solo los de esos departamentos. El coordinador no entra salvo que sea el líder.
+export function participantesSala(agentes, cliente, { departamentoDe = (a) => a.departamentoId, esCoordinador = () => false } = {}) {
+  const deps = lista(cliente?.departamentos)
+  return agentes.filter(a => a.active !== false && !esCoordinador(a)
+    && (!Array.isArray(a.clientesPermitidos) || a.clientesPermitidos.includes(cliente.id))
+    && (!deps.length || deps.includes(departamentoDe(a))))
+}
+// Quién responde: los mencionados que están en la sala; si nadie, el líder (o el primero de la sala)
+export function quienResponde(mencionados, participantes, lider) {
+  const ids = new Set(participantes.map(a => a.id))
+  const m = mencionados.filter(a => ids.has(a.id) || a.id === lider?.id)
+  if (m.length) return m.slice(0, 3)
+  return [lider || participantes[0]].filter(Boolean)
+}

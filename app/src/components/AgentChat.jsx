@@ -6,12 +6,13 @@ import { AgentAvatar } from './AgentModal.jsx'
 
 // Chat con un agente (chatId = id del agente) o con todo el equipo de agentes (chatId = 'grupo').
 // Las respuestas las escribe el motor de agentes desde el PC del dueño.
-export default function AgentChat({ chatId, agent, agents, engineOn, user, userProfile, onClose }) {
+// C8: sala de un cliente (chatId = 'sala-<clienteId>'): responde su agente líder o a quien él pase la palabra.
+export default function AgentChat({ chatId, agent, agents, engineOn, user, userProfile, onClose, sala = null }) {
   const [msgs, setMsgs] = useState([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const listRef = useRef(null)
-  const isGroup = chatId === 'grupo'
+  const isGroup = chatId === 'grupo' || !!sala
 
   useEffect(() => {
     const q = query(collection(db, 'agentChats', chatId, 'mensajes'), orderBy('createdAt', 'asc'), limit(150))
@@ -49,9 +50,9 @@ export default function AgentChat({ chatId, agent, agents, engineOn, user, userP
           ? <span className="agent-chat-group"><Icon name="users" size={16} /></span>
           : <AgentAvatar agent={agent} size={34} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 14 }}>{isGroup ? 'Chat del equipo de agentes' : agent?.name}</div>
+          <div style={{ fontWeight: 800, fontSize: 14 }}>{sala ? `Sala de ${sala.nombre}` : isGroup ? 'Chat del equipo de agentes' : agent?.name}</div>
           <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-            {isGroup ? 'Menciona con @Nombre a quien quieras; si no, responde tu coordinador' : agent?.role}
+            {sala ? `Agentes de este cliente. Responde ${(agents || []).find(a => a.id === sala.sala?.liderId)?.name || 'el líder'} o a quien él le pase la palabra; menciona con @Nombre para elegir tú.` : isGroup ? 'Menciona con @Nombre a quien quieras; si no, responde tu coordinador' : agent?.role}
           </div>
         </div>
         <button className="icon-btn" onClick={onClose} title="Cerrar chat"><Icon name="x" size={13} /></button>
