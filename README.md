@@ -287,6 +287,24 @@ limitadas) y uno a la vez. Todo queda registrado en `motor/logs/seguridad-regist
 al abrir una sesión nueva: cierra la terminal (o `wsl --shutdown` desde Windows) antes de encender el motor. La
 primera vez cada herramienta descarga su imagen y Trivy su base (~130 MB, queda en `motor/logs/cache-trivy`).
 
+### Analítica (GA4 y Search Console)
+
+El rol **Analítica web** (tipo *Informe mensual de analítica*) lee los datos reales del cliente en Google Analytics 4
+y Search Console, **solo lectura**, y entrega un PDF: cifras del mes contra el anterior, canales, páginas, búsquedas
+en Google, oportunidades (búsquedas casi en primera página) y acciones.
+
+1. Crea una **cuenta de servicio** en Google Cloud (IAM → Cuentas de servicio → Claves → JSON) y activa las APIs
+   *Google Analytics Data API* y *Google Search Console API*. Pega el JSON en **Agencia → Motor → Cuenta de servicio
+   de Google**. (Un cliente puede usar la suya: ficha del cliente → Analítica.)
+2. El cliente da acceso al correo de esa cuenta: GA4 → Administrar → Gestión de acceso → **Lector**; Search Console →
+   Configuración → Usuarios y permisos → **Restringido**.
+3. En la ficha del cliente → **Analítica**: ID de la propiedad de GA4 (números) y el sitio de Search Console.
+4. Para el informe mensual crea una **rutina**: tipo *Informe mensual de analítica*, mensual, **día 3** (Search Console
+   tarda 2–3 días en tener los datos).
+
+El motor entrega la credencial y la propiedad **solo** en tareas de ese cliente: el agente no puede pedir datos de
+otra propiedad.
+
 ### Motores de IA
 
 Cada agente elige su motor en **Agentes → Editar → Modelo de IA**; **Agencia → Modelos de IA** muestra cuáles tienen

@@ -101,6 +101,15 @@ export const EXAMPLE_TASK_TYPES = [
     checklist: ['Solo se escaneó lo autorizado y vigente', 'Ningún secreto aparece copiado en el informe', 'Cada hallazgo trae herramienta, referencia y cómo arreglarlo', 'Incluye el checklist OWASP Top 10:2025 y los límites de la prueba'],
     revisor: null, formatoEntrega: 'archivos', herramientas: ['seguridad', 'salida'],
   },
+  {
+    id: 'informe_analitica', departamento: 'operaciones', rol: 'analista', nombre: 'Informe mensual de analítica (PDF)',
+    descripcion: 'Tráfico, conversiones y Google del mes pasado comparado con el anterior, con oportunidades y acciones. Prográmalo el día 3 de cada mes.',
+    plantillaBrief: [
+      { campo: 'enfoque', etiqueta: 'En qué fijarse (un servicio, una campaña, una página)', tipo: 'texto', requerido: false },
+    ],
+    checklist: ['Todas las cifras vienen de GA4 o Search Console con su periodo', 'Compara con el periodo anterior', 'Termina con 3 a 5 acciones concretas', 'Explica sin jerga'],
+    revisor: 'revisor_calidad', formatoEntrega: 'archivos', herramientas: ['analitica', 'salida'],
+  },
 ]
 
 export const FIELD_TYPES = [
@@ -125,6 +134,7 @@ export const emptyClient = (nombre = '') => ({
   marca: { tono: '', colores: [], logoUrl: '', palabrasSi: [], palabrasNo: [] },
   objetivos: [],
   activos: { web: '', redes: '', repos: [], driveFolderId: '', bibliotecaPath: '' },
+  analitica: { ga4PropertyId: '', gscSitio: '' },
   alcanceAutorizado: { dominios: [], repos: [], ips: [], subdominios: false, notas: '', autorizadoPor: '', cargo: '', fecha: '', documento: '', vigenciaDesde: '', vigenciaHasta: '', ventana: { dias: [], desde: '', hasta: '' } },
   departamentos: [],
   aprendizajes: [],
@@ -170,6 +180,7 @@ export const PERMISOS = [
   { id: 'editor_video', label: 'Editar video (servidor de medios)' },
   { id: 'magnific_imagenes', label: 'Generar imágenes con Magnific (de pago)' },
   { id: 'auditoria', label: 'Auditar sitios web (PageSpeed, rastreo, accesibilidad, schema)', ayuda: 'Solo sitios públicos; no modifica nada' },
+  { id: 'analitica', label: 'Leer GA4 y Search Console del cliente', ayuda: 'Solo lectura y solo del cliente de la tarea' },
   { id: 'seguridad', label: 'Escaneos de seguridad pasivos (Docker)', ayuda: 'Solo dentro del alcance firmado del cliente; cada escaneo pide tu aprobación' },
   { id: 'gmail', label: 'Leer tu Gmail y crear borradores', sensible: true },
   { id: 'calendario', label: 'Ver y crear eventos en tu calendario', sensible: true },

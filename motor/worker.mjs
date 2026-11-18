@@ -81,7 +81,7 @@ function ajustes() {
 }
 // Claves que el admin carga en el panel (colección secretos: el panel escribe, solo el motor lee).
 // Si no están en el panel, se usan las de motor/.env.
-const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'PAGESPEED_API_KEY']
+const SECRETOS = ['TELEGRAM_BOT_TOKEN', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'PAGESPEED_API_KEY', 'GOOGLE_ANALITICA_SA']
 const secretosPanel = new Map()
 const deEnv = (k) => (env[k] && !String(env[k]).startsWith('PEGA_AQUI') ? env[k] : '')
 const secreto = (k) => secretosPanel.get(k) || deEnv(k)
@@ -154,7 +154,7 @@ const heartbeat = (extra = {}) =>
   setDoc(doc(db, 'config', 'agentWorker'), {
     online: !stopping, lastSeen: serverTimestamp(), host: os.hostname(), busyWith: ocupadoCon(), skills: installedSkills(),
     motores: estadoMotores, enCurso: [...enCurso.values()].map(x => ({ tarea: x.tarea, motor: x.motor })),
-    fuentesSkills: skillsMgr.fuentes(), curador: resumenCurador(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
+    fuentesSkills: skillsMgr.fuentes(), curador: resumenCurador(), analitica: resumenAnalitica(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
   }, { merge: true }).then(() => true, e => { log('No pude actualizar el latido:', e.code || e.message); return false })
 
 // Ajustes en uso (panel o negocio.json), para que el panel muestre los valores por defecto
@@ -312,6 +312,20 @@ function iniciarServidorAprobaciones() {
       ok()
     })
   })
+}
+
+// ---------- Analítica (B7) ----------
+// Para el panel: qué clientes tienen credencial propia y el correo de la cuenta de la agencia (no son secretos:
+// el cliente necesita ese correo para darle acceso de Lector). La clave nunca sale del motor.
+function resumenAnalitica() {
+  let cuentaAgencia = ''
+  try { cuentaAgencia = JSON.parse(secreto('GOOGLE_ANALITICA_SA') || 'null')?.client_email || '' } catch {}
+  const clientes = {}
+  for (const [k, v] of secretosPanel) {
+    const m = k.match(/^cliente_(.+)_google$/)
+    if (m) { try { clientes[m[1]] = JSON.parse(v).client_email || 'credencial cargada' } catch { clientes[m[1]] = 'credencial inválida' } }
+  }
+  return { cuentaAgencia, clientes }
 }
 
 // ---------- Curador de skills (B3) ----------
@@ -1106,7 +1120,7 @@ async function instalarSkillPropuesta(pr) {
 // ---------- Claude Code ----------
 // Servidores MCP propios que se declaran por tarea con --mcp-config (B5 auditoría, B6 seguridad).
 // Cada archivo solo trae la ruta del servidor, sin claves (las claves y el alcance van por variables de entorno).
-const SERVIDORES_MCP = { 'agentes-auditoria': 'auditoria-server.mjs', 'agentes-seguridad': 'seguridad-server.mjs' }
+const SERVIDORES_MCP = { 'agentes-auditoria': 'auditoria-server.mjs', 'agentes-seguridad': 'seguridad-server.mjs', 'agentes-analitica': 'analitica-server.mjs' }
 const rutasMcp = new Map()
 function mcpConfigPara(tools) {
   const out = []
@@ -1134,6 +1148,9 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     // B6: el alcance de seguridad del cliente de ESTA tarea (lo edita solo un admin); sin tarea o sin cliente, nada
     const conSeguridad = tools.some(x => x.startsWith('mcp__agentes-seguridad__'))
     const alcanceCliente = conSeguridad && tareaId ? clientFor(tasks.get(tareaId))?.alcanceAutorizado : null
+    // B7: credencial de Google y propiedad/sitio SOLO del cliente de esta tarea (la del cliente o, si no tiene, la de la agencia)
+    const conAnalitica = tools.some(x => x.startsWith('mcp__agentes-analitica__'))
+    const clienteAnalitica = conAnalitica && tareaId ? clientFor(tasks.get(tareaId)) : null
     const args = [
       // stream-json: además del resultado final (última línea, igual que con json) trae cada herramienta usada;
       // el curador de skills (B3) cuenta ahí qué skills se usan
@@ -1153,6 +1170,10 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
     const envClaude = { ...process.env, AGENTES_AGENTE: agentName || '', AGENTES_COLOR: negocio.color || '', AGENTES_CLIENTE: clienteId, AGENTES_TAREA: tareaId,
       ...(mcpExtra.length && secreto('PAGESPEED_API_KEY') ? { PAGESPEED_API_KEY: secreto('PAGESPEED_API_KEY') } : {}),
       ...(conSeguridad ? { AGENTES_ALCANCE: alcanceCliente ? JSON.stringify(alcanceCliente) : '', AGENTES_ZONA: ZONA() } : {}),
+      ...(conAnalitica ? {
+        AGENTES_GOOGLE_SA: clienteAnalitica ? (secretosPanel.get(`cliente_${clienteAnalitica.id}_google`) || secreto('GOOGLE_ANALITICA_SA')) : '',
+        AGENTES_GA4_PROPIEDAD: clienteAnalitica?.analitica?.ga4PropertyId || '', AGENTES_GSC_SITIO: clienteAnalitica?.analitica?.gscSitio || '', AGENTES_ZONA: ZONA(),
+      } : {}),
       ...(ejecucion ? { AGENTES_EJECUCION: ejecucion, AGENTES_APROBACION_URL: servidorAprobaciones.url, AGENTES_APROBACION_TOKEN: servidorAprobaciones.token, MCP_TOOL_TIMEOUT: String(TIEMPO_APROBACION_MS + 60_000) } : {}) }
     if (planValido(ajustes().planClaude) === 'api') { if (secreto('ANTHROPIC_API_KEY')) envClaude.ANTHROPIC_API_KEY = secreto('ANTHROPIC_API_KEY') }
     else delete envClaude.ANTHROPIC_API_KEY
@@ -1253,7 +1274,7 @@ function motorDe(agent, t) {
 }
 // Herramientas que solo existen en Claude Code (servidores MCP: medios, video, Magnific, Gmail, Drive…)
 // (Leer Drive no cuenta: es opcional y Codex/Gemini trabajan sin él)
-const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad']
+const GRUPOS_SOLO_CLAUDE = ['entregas', 'editor_video', 'magnific_imagenes', 'gmail', 'calendario', 'drive_crear', 'auditoria', 'seguridad', 'analitica']
 // Antigravity también puede: las herramientas de medios del motor (entregas y edición de video, conectadas por
 // tarea como plugin MCP) e imágenes con su propio generador en lugar de Magnific.
 const GRUPOS_ANTIGRAVITY = ['entregas', 'editor_video', 'magnific_imagenes']
