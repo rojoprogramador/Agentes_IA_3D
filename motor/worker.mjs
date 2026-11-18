@@ -20,6 +20,7 @@ import { crearMotores } from './motores.mjs'
 import { lanzar, matar, matarEn, matarTodos } from './procesos.mjs'
 import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 import { abrirHistorial, mensajesDeTarea, INTERNO } from './historial.mjs'
+import { AJUSTES_CURADOR, skillsUsadas, leerEstado as leerUsoSkills, guardarEstado as guardarUsoSkills, sumarUsos, tocaPasada, pasada as pasadaCurador, listarArchivo, restaurar as restaurarSkill } from './curador.mjs'
 import { AJUSTES_APRENDIZAJE, motivoRevision, promptAprendizaje, parsearPropuestas, skillMarkdown, rutaSkill } from './aprendizaje.mjs'
 import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
@@ -150,7 +151,7 @@ const heartbeat = (extra = {}) =>
   setDoc(doc(db, 'config', 'agentWorker'), {
     online: !stopping, lastSeen: serverTimestamp(), host: os.hostname(), busyWith: ocupadoCon(), skills: installedSkills(),
     motores: estadoMotores, enCurso: [...enCurso.values()].map(x => ({ tarea: x.tarea, motor: x.motor })),
-    fuentesSkills: skillsMgr.fuentes(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
+    fuentesSkills: skillsMgr.fuentes(), curador: resumenCurador(), secretos: origenSecretos(), ajustesEfectivos: ajustesPublicos(), consumoClaude: estadoClaude(), ...extra,
   }, { merge: true }).then(() => true, e => { log('No pude actualizar el latido:', e.code || e.message); return false })
 
 // Ajustes en uso (panel o negocio.json), para que el panel muestre los valores por defecto
@@ -171,6 +172,7 @@ const skillsMgr = crearSkills({ ROOT, log: (...a) => log(...a), fuentesExtra: ()
 function installedSkills() {
   const out = new Map()
   const origen = new Map(skillsMgr.leerOrigen().map(o => [o.nombre, o]))
+  const usos = leerUsoSkills(USO_SKILLS).skills
   for (const dir of [join(ROOT, '.claude', 'skills'), join(os.homedir(), '.claude', 'skills')]) {
     const delMotor = dir === join(ROOT, '.claude', 'skills')
     let names = []
@@ -184,10 +186,86 @@ function installedSkills() {
       out.set(name, {
         nombre: name, descripcion, ubicacion: delMotor ? 'motor' : 'usuario',
         ...(o ? { repo: o.repo, commit: o.commit, instalada: o.instalada } : {}),
+        ...(delMotor ? usoDe(name, usos) : {}),
       })
     }
   }
   return [...out.values()].slice(0, 150)
+}
+
+// ---------- Curador de skills (B3) ----------
+// Cuenta usos en cada corrida de Claude (logs/skills-uso.json) y una vez por semana, con el motor libre,
+// inactiva o archiva las que nadie usa. Ajustes en config/curador (Agencia → Skills).
+const USO_SKILLS = join(ROOT, 'logs', 'skills-uso.json')
+const RESPALDOS_SKILLS = join(ROOT, 'logs', 'respaldos-skills')
+let configCurador = {}
+let ultimaActividad = Date.now() // al encender cuenta como actividad: espera las 2 h libres
+const ajustesCurador = () => ({ ...AJUSTES_CURADOR, ...(ajustes().curador || {}), ...configCurador })
+
+// Una skill de cliente se cuenta como "<clienteId>/<nombre>" si existe para ese cliente; si no, por su nombre
+function registrarUsoSkills(conteo, clienteId) {
+  if (!conteo.size) return
+  const claves = new Map()
+  const delCliente = new Set(clienteId && clienteId !== INTERNO ? skillsDeCliente(clienteId) : [])
+  for (const [n, v] of conteo) { const k = delCliente.has(n) ? `${clienteId}/${n}` : n; claves.set(k, (claves.get(k) || 0) + v) }
+  guardarUsoSkills(USO_SKILLS, sumarUsos(leerUsoSkills(USO_SKILLS), claves, new Date().toISOString()))
+  log(`🧩 Skills usadas: ${[...claves].map(([k, v]) => `${k}${v > 1 ? ` ×${v}` : ''}`).join(', ')}`)
+}
+function usoDe(clave, usos = leerUsoSkills(USO_SKILLS).skills) {
+  const e = usos[clave]
+  return e ? { usos: e.usos || 0, ultimoUso: e.ultimoUso || '', estadoUso: e.estado || '' } : { usos: 0 }
+}
+
+// No se tocan: fijadas en el panel, asignadas a algún agente y todas las de clientes con rutinas activas
+function skillsProtegidas() {
+  const p = new Set(lista(ajustesCurador().fijadas).map(String))
+  for (const a of agents.values()) for (const n of lista(a.skills)) p.add(n)
+  for (const s of schedulesById.values()) {
+    if (!s.activo) continue
+    const cid = s.plantilla?.clienteId
+    if (cid) for (const n of skillsDeCliente(cid)) p.add(`${cid}/${n}`)
+    for (const n of lista(agents.get(s.plantilla?.asignado)?.skills)) p.add(n)
+  }
+  return p
+}
+
+function resumenCurador() {
+  const e = leerUsoSkills(USO_SKILLS)
+  const c = ajustesCurador()
+  const delCliente = Object.entries(e.skills).filter(([k]) => k.includes('/')).map(([clave, v]) => ({ clave, usos: v.usos || 0, ultimoUso: v.ultimoUso || '', estadoUso: v.estado || '' }))
+  return {
+    activo: c.activo !== false, simular: c.simular !== false, diasInactiva: c.diasInactiva, diasArchivo: c.diasArchivo,
+    ultimaPasada: e.ultimaPasada || '', ultimoInforme: e.ultimoInforme || null,
+    archivadas: listarArchivo(ROOT).slice(0, 60), skillsClientes: delCliente.slice(0, 100),
+  }
+}
+
+let curando = false
+async function correrCurador({ simular, motivo = 'semanal' } = {}) {
+  if (curando) throw new Error('El curador ya está trabajando')
+  curando = true
+  try {
+    const c = ajustesCurador()
+    const sim = simular ?? (c.simular !== false)
+    const instaladas = Object.fromEntries(skillsMgr.leerOrigen().filter(o => o.instalada).map(o => [o.nombre, o.instalada]))
+    const r = pasadaCurador({
+      ROOT, rutaEstado: USO_SKILLS, carpetaRespaldos: RESPALDOS_SKILLS, protegidas: skillsProtegidas(), simular: sim,
+      diasInactiva: Number(c.diasInactiva) || 14, diasArchivo: Number(c.diasArchivo) || 30, instaladas,
+    })
+    log(`🧹 Curador (${motivo}${sim ? ', simulación' : ''}): ${r.acciones.length ? r.acciones.map(a => `${a.accion} ${a.clave}`).join(' · ') : 'nada que cambiar'}`)
+    if (r.acciones.length) telegram?.notify(r.texto)
+    heartbeat()
+    return { texto: r.texto, acciones: r.acciones.map(({ clave, nombre, accion, motivo: m, dias }) => ({ clave, nombre, accion, motivo: m, dias })), simular: sim }
+  } finally { curando = false }
+}
+
+function revisarCurador() {
+  if (enCurso.size || chatOcupado) { ultimaActividad = Date.now(); return }
+  const c = ajustesCurador()
+  if (c.activo === false || curando) return
+  const e = leerUsoSkills(USO_SKILLS)
+  if (!tocaPasada({ ultimaPasada: e.ultimaPasada, ultimaActividad, ocupado: false, cadaDias: Number(c.cadaDias) || 7, horasLibre: Number(c.horasLibre) || 2 })) return
+  correrCurador().catch(err => log('Curador: error', err.message))
 }
 
 // ---------- Skills desde el panel (colección skillOps) ----------
@@ -214,9 +292,11 @@ async function atenderSkillOp(op) {
       resultado = await skillsMgr.instalar(rev.resultado, { reemplazar: !!op.reemplazar })
     } else if (op.tipo === 'actualizar') resultado = await skillsMgr.actualizar(op.nombre)
     else if (op.tipo === 'desinstalar') resultado = skillsMgr.desinstalar(op.nombre)
+    else if (op.tipo === 'curar') resultado = await correrCurador({ simular: op.simular !== false, motivo: 'pedida desde el panel' })
+    else if (op.tipo === 'restaurar') { resultado = restaurarSkill(ROOT, op.archivoId); log(`♻ Skill restaurada: ${resultado.nombre}`) }
     else throw new Error('Operación desconocida')
     await updateDoc(ref, { estado: 'listo', resultado, terminadoAt: serverTimestamp() })
-    if (op.tipo === 'instalar' || op.tipo === 'desinstalar') heartbeat()
+    if (['instalar', 'desinstalar', 'restaurar'].includes(op.tipo)) heartbeat()
   } catch (e) {
     log(`Skills (${op.tipo}):`, e.message)
     await updateDoc(ref, { estado: 'error', error: String(e.message || e).slice(0, 300) }).catch(() => {})
@@ -903,7 +983,9 @@ async function instalarSkillPropuesta(pr) {
 function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurns = 40, clienteId = '', tareaId = '' } = {}) {
   return new Promise((resolve) => {
     const args = [
-      '-p', '--output-format', 'json', '--max-turns', String(maxTurns),
+      // stream-json: además del resultado final (última línea, igual que con json) trae cada herramienta usada;
+      // el curador de skills (B3) cuenta ahí qué skills se usan
+      '-p', '--output-format', 'stream-json', '--verbose', '--max-turns', String(maxTurns),
       '--allowedTools', `"${tools.join(',')}"`,
       ...(resume ? ['--resume', resume] : []),
     ]
@@ -927,6 +1009,7 @@ function runClaude(prompt, cwd, { tools = BASE_TOOLS, resume, agentName, maxTurn
       let json = null
       try { json = JSON.parse(out.trim().split(/\r?\n/).pop()) } catch {}
       if (json) registrarUsoClaude(json)
+      try { registrarUsoSkills(skillsUsadas(out), clienteId) } catch (e) { log('Curador: no pude contar usos de skills:', e.message) }
       resolve({ code, json, raw: out, err })
     })
     child.stdin.end(prompt)
@@ -1806,6 +1889,7 @@ async function main() {
   setInterval(heartbeat, 60_000)
   setInterval(repartirTareasDeDepartamento, 60_000)
   setInterval(revisarProgramadas, 60_000)
+  setInterval(revisarCurador, 60_000)
   log('Motor encendido. Esperando tareas de los agentes… (Ctrl + C para apagar)')
 }
 
@@ -1820,6 +1904,7 @@ function escucharPanel() {
     heartbeat()
   }, e => { log('Ajustes del panel sin acceso; uso negocio.json:', e.code || e.message); okConfig() })
   onSnapshot(doc(db, 'config', 'perfilDueno'), d => { perfilDueno = d.data() || {} }, () => {})
+  onSnapshot(doc(db, 'config', 'curador'), d => { configCurador = d.data() || {}; heartbeat() }, () => {})
   let previo = null
   onSnapshot(collection(db, 'secretos'), snap => {
     secretosPanel.clear()

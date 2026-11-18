@@ -101,6 +101,14 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   de cliente en `motor/skills-clientes/<clienteId>/`, copiada a `trabajos/<id>/.claude/skills/` solo en sus tareas
   (`copiarSkillsDeCliente`; verificado que Claude Code las carga). Reglas: el robot crea en `pendiente` y solo pasa
   una skill aprobada a `instalada`/`error`; el admin no puede cambiar `tipo` ni `destino`.
+- Curador de skills (`motor/curador.mjs`, puro con pruebas). `runClaude` usa `--output-format stream-json --verbose`
+  (la última línea sigue siendo el resultado); `skillsUsadas` cuenta `tool_use` Skill y Read de `.claude/skills/<n>/SKILL.md`
+  → `logs/skills-uso.json` (clave `nombre` o `<clienteId>/<nombre>`). `revisarCurador` (cada minuto): semanal y con
+  el motor libre ≥2 h. `planCuracion`: el reloj parte de `max(ultimoUso, vistaDesde, instalada)`; 14 días → `inactiva`
+  (solo marca), 30 → `archivar` (mueve a `motor/skills-archivo/<_global|clienteId>/`, con `.archivada.json`). Protegidas:
+  `config/curador.fijadas`, `agents.skills` y skills de clientes con rutinas activas. Respaldo tar.gz previo
+  (`logs/respaldos-skills/`, últimos 8). `config/curador.simular` (por defecto true) solo informa. skillOps `curar`
+  (siempre simulación desde el panel) y `restaurar`. Heartbeat: `curador` (informe, archivadas) y `usos` por skill.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
