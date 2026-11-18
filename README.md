@@ -194,6 +194,10 @@ Si llenas el link de la tarea terminada antes de que el agente trabaje, el agent
 
 Las pantallas **Agentes**, **Clientes** y **Agencia** solo las ve el Super Admin.
 
+- **Memoria con límite**: cada agente (2.200 caracteres), cada cliente (2.200) y tu perfil (1.375, en Agencia → Motor)
+  tienen una memoria corta que va en cada tarea. Se llena con tus correcciones y la editas en la ficha. Si algo nuevo
+  no cabe, hay que consolidar (editar o quitar) en vez de acumular; las entradas con claves, texto invisible o
+  instrucciones para saltarse las reglas se rechazan.
 - **Clientes**: la ficha de cada cliente (negocio, marca, objetivos, activos, alcance, aprendizajes y departamentos
   contratados). Un agente solo recibe la ficha del cliente de su tarea; nunca ve la de otros clientes.
 - **Agencia → Tareas**: todas las tareas agrupadas por departamento, con filtro por cliente. Es la misma lista que

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
-import { doc, updateDoc, arrayUnion, serverTimestamp, onSnapshot } from 'firebase/firestore'
+import { doc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore'
+import { agregarEntrada, LIMITES_MEMORIA } from '../../../motor/memoria.mjs'
 
 // Revisión de una entrega de agente: brief vs entrega, notas del agente revisor, versiones
 // y las decisiones del equipo (Aprobar / Corregir / Rechazar). Las correcciones pueden quedar
@@ -94,17 +95,18 @@ export default function ReviewPanel({ task, onDone }) {
         estado: 'en_revision', agentStatus: 'queued', rehacerDesdeCero: rechazo,
         lastEditedBy: user.email, lastEditedAt: serverTimestamp(),
       })
-      if (guardarAprendizaje && cliente) {
-        await updateDoc(doc(db, 'clients', cliente.id), {
-          aprendizajes: arrayUnion({ texto, origenTaskId: task.id, fecha: new Date().toISOString() }),
-        })
+      // Memoria con límite: si no cabe, la corrección se envía igual y se avisa para consolidar en la ficha
+      const avisos = []
+      const entrada = { texto, origenTaskId: task.id, fecha: new Date().toISOString() }
+      const guardar = async (col, d, tipo, nombre) => {
+        const r = agregarEntrada(d.aprendizajes, entrada, LIMITES_MEMORIA[tipo])
+        if (r.ok) await updateDoc(doc(db, col, d.id), { aprendizajes: r.entradas })
+        else avisos.push(`Memoria de ${nombre}: ${r.error}`)
       }
-      if (leccionAgente && agente) {
-        await updateDoc(doc(db, 'agents', agente.id), {
-          aprendizajes: arrayUnion({ texto, origenTaskId: task.id, fecha: new Date().toISOString() }),
-        })
-      }
+      if (guardarAprendizaje && cliente) await guardar('clients', cliente, 'cliente', cliente.nombre)
+      if (leccionAgente && agente) await guardar('agents', agente, 'agente', agente.name)
       showToast(rechazo ? 'Rechazada: el agente la rehace desde cero' : 'Enviada a correcciones')
+      if (avisos.length) setTimeout(() => showToast(avisos.join(' · '), 'error'), 1200)
       onDone?.()
     } catch (e) {
       console.error(e)

@@ -78,6 +78,11 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
   `~/.gemini/antigravity-cli/brain/<conversation_id>/` y `copiarImagenesAgy` las copia a `salida/`. En el worker:
   `soloClaude` = grupos que ni Antigravity tiene (Gmail, calendario, crear en Drive, MCP extra); `sinHerramientasMcp`
   decide Codex y Gemini (`GRUPOS_ANTIGRAVITY` = entregas, editor_video, magnific_imagenes).
+- Memoria con límite (`motor/memoria.mjs`, puro con pruebas; el panel lo importa): `agents.aprendizajes` y
+  `clients.aprendizajes` (2.200) y `config/perfilDueno.entradas` (1.375). `agregarEntrada` falla si no cabe (hay que
+  consolidar), `revisarEntrada` rechaza claves, Unicode invisible, inyección y enlaces de exfiltración, y
+  `bloqueMemoria` arma el bloque del prompt con el uso. Editor: `MemoriaEditor.jsx`.
+- Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
 

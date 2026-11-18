@@ -5,6 +5,7 @@ import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/fi
 import { toLines, fromLines } from '../agencia.js'
 import { LIMITES_PLAN } from '../../../motor/consumo.mjs'
 import MedidorClaude from '../components/MedidorClaude.jsx'
+import MemoriaEditor from '../components/MemoriaEditor.jsx'
 
 // Configuración del motor desde el panel.
 // - Ajustes (config/motor): el motor los aplica al momento; lo que quede vacío sale de motor/negocio.json.
@@ -55,6 +56,13 @@ export default function AgenciaMotor() {
 
   useEffect(() => onSnapshot(doc(db, 'config', 'agentWorker'), d => setWorker(d.data() || {}), () => setWorker({})), [])
   useEffect(() => onSnapshot(doc(db, 'config', 'motor'), d => setPanel(d.data() || {}), () => setPanel({})), [])
+  const [perfil, setPerfil] = useState([])
+  useEffect(() => onSnapshot(doc(db, 'config', 'perfilDueno'), d => setPerfil(d.data()?.entradas || []), () => {}), [])
+  const guardarPerfil = (entradas) => {
+    setPerfil(entradas)
+    setDoc(doc(db, 'config', 'perfilDueno'), { entradas, updatedAt: serverTimestamp() })
+      .then(() => showToast('Perfil guardado'), () => showToast('No se pudo guardar el perfil', 'error'))
+  }
   // El formulario se llena una vez, cuando ya llegaron los ajustes del panel y los que usa el motor
   useEffect(() => {
     if (form || panel === undefined || worker === undefined) return
@@ -163,6 +171,14 @@ export default function AgenciaMotor() {
           Las claves de los modelos por API se cargan en <em>Modelos de IA</em>. El correo y la contraseña del robot siguen en <code>motor/.env</code>:
           el motor los necesita para entrar a Firebase y leer todo lo demás. Las sesiones de Claude Code, Antigravity y Codex se inician en el PC del motor.
         </p>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0, fontSize: 15 }}>Tu perfil (lo que todos los agentes saben de ti)</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0 }}>
+          Tus preferencias como quien aprueba: estilo, cosas que siempre pides o que nunca quieres ver. Va en cada tarea de todos los agentes.
+        </p>
+        <MemoriaEditor tipo="dueno" entradas={perfil} onChange={guardarPerfil} vacio="Aún no hay nada. Ejemplo: «Prefiero textos cortos, sin signos de exclamación.»" />
       </div>
 
       <div className="card">

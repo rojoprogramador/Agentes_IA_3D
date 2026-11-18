@@ -1,3 +1,4 @@
+import { bloqueMemoria, LIMITES_MEMORIA } from './memoria.mjs'
 // Agencia: funciones puras para armar el contexto de cada tarea (sin Firebase, se pueden probar solas)
 
 export const lista = (arr) => (Array.isArray(arr) ? arr : []).filter(Boolean)
@@ -7,7 +8,6 @@ export const safeName = (s) => String(s || '').replace(/[<>:"/\\|?*\u0000-\u001f
 export function clientContext(c) {
   if (!c) return ''
   const n = c.negocio || {}, m = c.marca || {}, a = c.activos || {}
-  const aprendizajes = lista(c.aprendizajes).slice(-15)
   return [
     `## Ficha del cliente: ${c.nombre}`,
     'Este es el único cliente de esta tarea: usa solo este contexto.',
@@ -21,7 +21,7 @@ export function clientContext(c) {
     lista(m.palabrasNo).length && `Palabras o frases PROHIBIDAS: ${m.palabrasNo.join('; ')}`,
     lista(c.objetivos).length && `Objetivos actuales:\n${c.objetivos.map(o => '- ' + o).join('\n')}`,
     (a.web || a.redes) && `Activos: ${[a.web, a.redes].filter(Boolean).join(' · ')}`,
-    aprendizajes.length && `Aprendizajes de correcciones anteriores (respétalos siempre):\n${aprendizajes.map(x => '- ' + x.texto).join('\n')}`,
+    bloqueMemoria(`MEMORIA DEL CLIENTE ${c.nombre}`, c.aprendizajes, LIMITES_MEMORIA.cliente, 'Lo aprendido de correcciones anteriores con este cliente (respétalo siempre):'),
   ].filter(Boolean).join('\n')
 }
 

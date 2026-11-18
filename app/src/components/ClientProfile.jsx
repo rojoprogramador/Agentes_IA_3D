@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import MemoriaEditor from './MemoriaEditor.jsx'
 import { db } from '../firebase.js'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import Icon from './Icons.jsx'
@@ -52,7 +53,6 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
   const toggleDept = (id) => set('departamentos',
     form.departamentos.includes(id) ? form.departamentos.filter(d => d !== id) : [...form.departamentos, id])
 
-  const removeLearning = (i) => set('aprendizajes', form.aprendizajes.filter((_, j) => j !== i))
 
   const handleSave = async () => {
     const nombre = form.nombre.trim()
@@ -200,18 +200,14 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
           </>}
 
           {tab === 'aprendizajes' && (
-            form.aprendizajes.length === 0
-              ? <p style={{ fontSize: 13, color: 'var(--text-3)' }}>Aún no hay aprendizajes. Se agregan cuando pides correcciones en una tarea de este cliente.</p>
-              : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {form.aprendizajes.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 8 }}>
-                      <span style={{ flex: 1, fontSize: 13 }}>{a.texto}<br />
-                        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{a.fecha ? new Date(a.fecha).toLocaleDateString('es-CO') : ''}</span>
-                      </span>
-                      <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => removeLearning(i)} title="Quitar">✕</button>
-                    </div>
-                  ))}
-                </div>
+            <>
+              <p style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 0 }}>
+                Memoria del cliente: todos los agentes que trabajen para él la reciben en cada tarea. Es corta a propósito; se llena con
+                tus correcciones y puedes editarla aquí.
+              </p>
+              <MemoriaEditor tipo="cliente" entradas={form.aprendizajes} onChange={v => set('aprendizajes', v)}
+                vacio="Aún no hay aprendizajes. Se agregan cuando pides correcciones en una tarea de este cliente." />
+            </>
           )}
         </div>
 
