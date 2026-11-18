@@ -34,7 +34,7 @@ import { AJUSTES_CURADOR, skillsUsadas, leerEstado as leerUsoSkills, guardarEsta
 import { AJUSTES_APRENDIZAJE, motivoRevision, promptAprendizaje, parsearPropuestas, skillMarkdown, rutaSkill } from './aprendizaje.mjs'
 import { resumen as resumenConsumo, podar as podarConsumo, limitesDe, planValido, hastaCuandoBloqueado, ordenarCadena } from './consumo.mjs'
 import { proximaEjecucion, describirRegla, reglaValida, diasDesdeTexto, tituloConFecha, fechaLocal } from './programadas.mjs'
-import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro, quitarBloques, hijasListas as hijasListasPuro, participantesSala, quienResponde } from './agencia.mjs'
+import { lista, safeName, clientContext, briefSection as briefPuro, parseReview, permisosDeTarea as permisosPuro, quitarBloques, hijasListas as hijasListasPuro, participantesSala, quienResponde, reglaIdioma, limpiarRutasLocales } from './agencia.mjs'
 import { spawn } from 'node:child_process'
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, readdirSync, statSync, cpSync, copyFileSync } from 'node:fs'
 import { join, dirname, resolve, relative, isAbsolute, basename } from 'node:path'
@@ -605,7 +605,7 @@ function businessContext() {
     n.descripcion ? n.descripcion : '',
     n.identidad ? `Identidad visual: ${n.identidad}` : '',
     n.tono ? `Tono de comunicación: ${n.tono}` : '',
-    `Quien aprueba el trabajo es ${OWNER}. Si la tarea no dice cliente, el cliente es ${n.nombre || 'el propio negocio'}.`,
+    `Quien aprueba el trabajo es ${OWNER}.`,
     bloqueMemoria(`PERFIL DE ${OWNER}`, perfilDueno.entradas, LIMITES_MEMORIA.dueno, `Preferencias de ${OWNER} como quien aprueba (respétalas):`),
   ].filter(Boolean).join('\n')
 }
@@ -617,8 +617,13 @@ function teamContext(soloCliente = '') {
     .map(a => `- ${a.name} (${a.role || 'general'})${a.active === false ? ' [en reserva]' : ''}${a.mission ? ': ' + a.mission : ''}`)
   const people = [...users.values()].filter(u => u.role === 'admin' || u.role === 'empleado')
     .map(u => `- ${u.name}${u.position ? ' (' + u.position + ')' : ''}`)
-  // En una tarea de un cliente, el coordinador solo ve las tareas de ese cliente
-  const open = [...tasks.values()].filter(t => !soloCliente || norm(t.cliente) === norm(soloCliente)).slice(0, 40).map(t => {
+  // En una tarea de un cliente, el coordinador solo ve las tareas de ese cliente.
+  // QA 6: incluye las que esperan aprobación (el snapshot principal solo trae pendiente/en_progreso/en_revision).
+  const todas = [...new Map([...tasks.values(), ...enEspera.values()].map(t => [t.id, t])).values()]
+    .filter(t => !soloCliente || norm(t.cliente) === norm(soloCliente))
+  const conteo = ['pendiente', 'en_progreso', 'en_revision', 'en_espera']
+    .map(e => `${{ pendiente: 'Pendiente', en_progreso: 'En progreso', en_revision: 'Correcciones', en_espera: 'Espera aprobación' }[e]}: ${todas.filter(t => t.estado === e).length}`).join(' · ')
+  const open = todas.slice(0, 60).map(t => {
     const who = agents.get(t.asignado)?.name || users.get(t.asignado)?.name || 'sin asignar'
     return `- [${t.estado}] ${t.tarea} → ${who}${t.cliente ? ' · ' + t.cliente : ''}`
   })
@@ -626,7 +631,7 @@ function teamContext(soloCliente = '') {
     `Hoy es ${new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`,
     '\n## Agentes de IA disponibles para delegar', ...(ag.length ? ag : ['(ninguno)']),
     '\n## Personas del equipo', ...(people.length ? people : ['(ninguna)']),
-    '\n## Tareas abiertas en Task Control', ...(open.length ? open : ['(ninguna)']),
+    '\n## Tareas abiertas en Task Control', `Totales: ${conteo}`, ...(open.length ? open : ['(ninguna)']),
     '\n## Preguntas pendientes de los agentes',
     ...(pendingQuestions().map(q => `- [tarea_id ${q.id}] ${q.agent} pregunta sobre "${q.tarea}": ${q.question.slice(0, 400)}`)),
   ].join('\n')
@@ -634,6 +639,8 @@ function teamContext(soloCliente = '') {
 
 // Tareas en espera porque el agente pidió información (snapshot aparte: están en "en_espera")
 const waiting = new Map()
+// Todas las tareas en Espera aprobación (para que el coordinador las vea y las cuente)
+const enEspera = new Map()
 function pendingQuestions() {
   return [...waiting.values()]
     .filter(t => t.agentStatus === 'needs_info' && t.agentQuestion)
@@ -964,7 +971,8 @@ function buildPrompt(agent, t, { adjuntos, observaciones } = {}) {
     `Eres ${agent.name}, agente de IA de ${negocio.nombre || 'este negocio'}. Tu área: ${agent.role || perfil.nombre || 'general'}.`,
     agent.mission || perfil.mision ? `Tu misión: ${agent.mission || perfil.mision}` : '',
     '\n' + businessContext(),
-    client ? '\n' + clientContext(client) : '',
+    client ? '\n' + clientContext(client) : `\n## Tarea interna, sin cliente\nEsta tarea no tiene cliente: es trabajo interno de ${negocio.nombre || 'la agencia'}. No asumas la marca, los servicios ni los datos de ningún cliente; si hacen falta, dilo en "Notas".`,
+    '\n' + reglaIdioma(client?.idioma || loadNegocio().idioma),
     '',
     revision ? '## CORRECCIONES pedidas sobre tu entrega anterior' : '## Tarea asignada',
     `Tarea: ${t.tarea}`,
@@ -1674,6 +1682,9 @@ function comandoParar(arg) {
   return detenerTarea(x.id, `${OWNER} (Telegram)`) ? `Detengo "${x.tarea}". Queda en pendiente; la reanudas desde el panel.` : `"${x.tarea}" ya se estaba deteniendo.`
 }
 
+// QA 4: rutas file:// o del PC que algunos motores escriben en su respuesta → nombre relativo (salida/archivo)
+const sinRutasLocales = (texto) => limpiarRutasLocales(texto, [ROOT, dirname(ROOT), os.homedir()])
+
 async function runTask(t) {
   const agent = agents.get(t.asignado)
   const ref = doc(db, 'tasks', t.id)
@@ -1719,7 +1730,7 @@ async function runTask(t) {
   if (cancelados.has(t.id)) return terminarCancelada(t, started)
   let extraCost = 0, extraTurns = 0
   const seconds = Math.round((Date.now() - started) / 1000)
-  let result = (res.json?.result || '').trim()
+  let result = sinRutasLocales((res.json?.result || '').trim())
   const failed = res.code !== 0 || !res.json || res.json.is_error || !result
 
   // Releer: si alguien la movió mientras trabajaba, no le cambiamos la columna
@@ -1787,7 +1798,7 @@ async function runTask(t) {
       const p2 = buildPrompt(agent, t, { adjuntos, observaciones: { notas: r1.parsed.notas, entrega: result } })
       const res2 = await runModel(agent, p2, cwd, opts, t)
       extraCost += res2.json?.total_cost_usd || 0; extraTurns += res2.json?.num_turns || 0
-      const r2text = (res2.json?.result || '').trim()
+      const r2text = sinRutasLocales((res2.json?.result || '').trim())
       if (res2.code === 0 && r2text && !/^NECESITO:/i.test(r2text)) { result = r2text; corregida = true }
     }
     revisionAgente = {
@@ -1817,8 +1828,11 @@ async function runTask(t) {
 
   // El documento de Drive queda como "Link de la tarea terminada" si estaba vacío
   const docLink = result.match(/https:\/\/docs\.google\.com\/[^\s)>\]"]+/)?.[0]
+  // QA 3: el tiempo cuenta hasta el final (revisión entre agentes, corrección y PDF incluidos), con cualquier motor
+  const totalSegundos = Math.round((Date.now() - started) / 1000)
   await updateDoc(ref, {
     ...base,
+    totalTimeSeconds: (fresh.totalTimeSeconds || 0) + totalSegundos,
     ...(docLink && !fresh.linkTerminada ? { linkTerminada: docLink } : {}),
     agentStatus: 'done',
     agentQuestion: '',
@@ -1840,7 +1854,7 @@ async function runTask(t) {
   if (saved) publicarEnDrive(t, n, !fresh.linkTerminada && !docLink, conv.pdfs)
   writeFileSync(join(cwd, 'entrega.md'), result)
   anotar(t, 'entrega', result, agent.id)
-  log(`✔ ${agent.name} entregó "${t.tarea}" en ${Math.round(seconds / 60)} min → Espera Aprobación`)
+  log(`✔ ${agent.name} entregó "${t.tarea}" en ${totalSegundos < 60 ? totalSegundos + ' s' : Math.round(totalSegundos / 60) + ' min'} (${res.motor || 'claude'}) → Espera Aprobación`)
   telegram?.notify(`${agent.name} terminó "${t.tarea}". Está en Espera Aprobación.`)
   postToChat(GROUP, 'agent', `Terminé "${t.tarea}"${t.cliente ? ' (' + t.cliente + ')' : ''}. Quedó en Espera Aprobación.`, t.id, agent.id)
 }
@@ -1908,6 +1922,7 @@ async function agentReply(agent, chatId, history, extra = '', { cliente = null, 
           'Solo hablas de este cliente. Si tienes buscar_historial, úsala para revisar trabajos anteriores de este cliente.'].join('\n')
       : chatId === GROUP ? `Estás en el chat grupal del equipo de agentes con ${OWNER}. Responde solo a lo que te toca; si necesitas a otro agente, menciónalo con @Nombre y dile qué necesitas.` : `Estás chateando con ${OWNER} desde la Oficina.`,
     'Responde corto, claro y en texto plano (sin tablas). No inventes avances: si una tarea no está hecha, dilo.',
+    reglaIdioma(cliente?.idioma || loadNegocio().idioma),
     isCoordinador(agent) ? teamContext() : agentsRoster(),
     own.length ? '\n## Tus tareas\n' + own.join('\n') : '',
     questions.length ? `\n## Tus preguntas pendientes a ${OWNER}\n` + questions.map(q => `- [tarea_id ${q.id}] ${q.question}`).join('\n') : '',
@@ -1922,9 +1937,13 @@ async function agentReply(agent, chatId, history, extra = '', { cliente = null, 
   mkdirSync(cwd, { recursive: true })
   // En el chat el agente tiene sus mismas herramientas que en las tareas (Magnific, editor, etc.). En una sala, además,
   // el historial de ESE cliente (buscar_historial filtrado por AGENTES_CLIENTE).
-  const tools = cliente ? toolsFor(agent, { id: chatId, clienteId: cliente.id }) : toolsFor(agent)
-  const res = await runClaude(prompt, cwd, { tools, agentName: deliveryName(agent), maxTurns: Math.max(15, perfilDe(agent).maxTurns || 0), agentId: agent.id, ...(cliente ? { clienteId: cliente.id } : {}) })
-  let text = (res.json?.result || '').trim()
+  // QA 1: el chat usa el MISMO camino que las tareas (motor del agente → respaldo → consumo de Claude), no Claude fijo.
+  // En una sala va una tarea "virtual" del cliente para respetar su permiso de modelos gratis.
+  const virtual = cliente ? { id: chatId, clienteId: cliente.id, cliente: cliente.nombre, tarea: `la sala de ${cliente.nombre}` } : null
+  const tools = cliente ? toolsFor(agent, virtual) : toolsFor(agent)
+  const res = await runModel(agent, prompt, cwd, { tools, agentName: deliveryName(agent), maxTurns: Math.max(15, perfilDe(agent).maxTurns || 0), agentId: agent.id, ...(cliente ? { clienteId: cliente.id } : {}) }, virtual)
+  if (res.motor && res.motor !== 'claude') log(`  (chat de ${agent.name} con ${res.motor})`)
+  let text = sinRutasLocales((res.json?.result || '').trim())
   if (!text || res.json?.is_error) return 'No pude responder ahora mismo. Intenta de nuevo en un momento.'
   text = await applyAnswers(text)
   if (isCoordinador(agent)) text = (await procesarBloques(text, 'chat')).text
@@ -2088,6 +2107,11 @@ async function main() {
     pump()
     watchChats()
   }, e => log('Error leyendo agentes:', e.code || e.message))
+
+  onSnapshot(query(collection(db, 'tasks'), where('estado', '==', 'en_espera')), snap => {
+    enEspera.clear()
+    snap.forEach(d => enEspera.set(d.id, { id: d.id, ...d.data() }))
+  }, e => log('Error leyendo tareas en espera:', e.code || e.message))
 
   // Tareas detenidas porque el agente pidió información (para avisar y recibir respuestas)
   onSnapshot(query(collection(db, 'tasks'), where('agentStatus', '==', 'needs_info')), snap => {

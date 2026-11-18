@@ -195,6 +195,11 @@ Proyecto de código abierto: una oficina 3D con agentes de IA para cualquier neg
 - Tour guiado (D): contenido en `app/src/tour.js` (`TOURS` por página, `pasosDe`), componente `TourGuiado.jsx` (ilumina
   `[data-tour="…"]`, cambia de página en el recorrido completo). Botón "?" en `Header.jsx` (Mayús: recorrido completo);
   primer ingreso: recorrido completo (`tutorial_<uid>` en localStorage). Para agregar un paso: `data-tour` + entrada en `TOURS`.
+- Correcciones de QA (nov 2026): `agentReply` (chats, grupo y salas) usa `runModel` como las tareas (en una sala, con
+  una tarea virtual del cliente); `reglaIdioma(clients.idioma || negocio.idioma)` (es-CO por defecto, `agencia.mjs`) va en
+  tareas y chats; sin cliente el prompt dice "tarea interna" (ya no se asume el negocio como cliente);
+  `limpiarRutasLocales` quita file:// y rutas del PC de la respuesta de cualquier motor; `totalTimeSeconds` se suma
+  hasta el final de la entrega; `teamContext` incluye las tareas `en_espera` (snapshot `enEspera`) con totales.
 - Seguridad: plantilla de autorización en `docs/plantillas/autorizacion-pruebas-seguridad.md` (requisito de B6).
 - `firestore.rules` — reglas de seguridad. `tools/configurar.mjs` las personaliza.
 - `.claude/skills/instalar/` — asistente de instalación.
