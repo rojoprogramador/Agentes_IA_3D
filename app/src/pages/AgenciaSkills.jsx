@@ -3,6 +3,7 @@ import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
 import { doc, addDoc, collection, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import Icon from '../components/Icons.jsx'
+import { confirmar } from '../components/Confirmar.jsx'
 
 const SUGERENCIAS = ['copywriting', 'instagram', 'video', 'seo', 'diseño', 'anuncios', 'email', 'presentaciones']
 const ONLINE_MS = 3 * 60 * 1000
@@ -167,7 +168,7 @@ export default function AgenciaSkills() {
                     Buscar actualización
                   </button>
                   <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} disabled={!online || ocupado(accion)}
-                    onClick={() => { if (confirm(`¿Quitar la skill "${s.nombre}" del motor? Los agentes que la usen dejarán de tenerla.`)) pedirAccion({ tipo: 'desinstalar', nombre: s.nombre }) }}>
+                    onClick={async () => { if (await confirmar(`¿Quitar la skill "${s.nombre}" del motor? Los agentes que la usen dejarán de tenerla.`, { titulo: 'Quitar skill', boton: 'Quitar' })) pedirAccion({ tipo: 'desinstalar', nombre: s.nombre }) }}>
                     <Icon name="trash" size={12} />
                   </button>
                 </>

@@ -3,6 +3,7 @@ import { db } from '../firebase.js'
 import { doc, updateDoc } from 'firebase/firestore'
 import Icon from './Icons.jsx'
 import LookEditor, { userLook } from './LookEditor.jsx'
+import { confirmar } from './Confirmar.jsx'
 
 // Personalizar el avatar 3D de una persona del equipo (la propia o, para administradores, la de cualquiera)
 export default function AvatarModal({ person, onClose, showToast }) {
@@ -26,7 +27,7 @@ export default function AvatarModal({ person, onClose, showToast }) {
   }
 
   const reset = async () => {
-    if (!confirm('¿Volver al avatar automático?')) return
+    if (!(await confirmar('¿Volver al avatar automático?'))) return
     try {
       await updateDoc(doc(db, 'users', person.uid), { look: null })
       showToast('Avatar restablecido')

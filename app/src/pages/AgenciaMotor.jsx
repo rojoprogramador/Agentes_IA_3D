@@ -8,6 +8,7 @@ import MedidorClaude from '../components/MedidorClaude.jsx'
 import MemoriaEditor from '../components/MemoriaEditor.jsx'
 import CATALOGO from '../../../roles/catalogo.json'
 import { addDoc, collection } from 'firebase/firestore'
+import { confirmar } from '../components/Confirmar.jsx'
 
 // Configuración del motor desde el panel.
 // - Ajustes (config/motor): el motor los aplica al momento; lo que quede vacío sale de motor/negocio.json.
@@ -158,7 +159,7 @@ export default function AgenciaMotor() {
     }
   }
   const quitarClave = async (s) => {
-    if (!confirm(`¿Quitar "${s.nombre}" del panel? Si existe en motor/.env, el motor vuelve a usar esa.`)) return
+    if (!(await confirmar(`¿Quitar "${s.nombre}" del panel? Si existe en motor/.env, el motor vuelve a usar esa.`))) return
     await deleteDoc(doc(db, 'secretos', s.id)).then(() => showToast('Clave quitada'), () => showToast('No se pudo quitar', 'error'))
   }
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
 import {
+import { confirmar } from '../components/Confirmar.jsx'
   collection, addDoc, deleteDoc, doc, updateDoc,
   onSnapshot, orderBy, query, serverTimestamp, arrayUnion, arrayRemove
 } from 'firebase/firestore'
@@ -57,7 +58,7 @@ export default function Discussion() {
   }
 
   const handleDelete = async (post) => {
-    if (!confirm('¿Eliminar este mensaje?')) return
+    if (!(await confirmar('¿Eliminar este mensaje?'))) return
     await deleteDoc(doc(db, 'discussions', post.id))
   }
 

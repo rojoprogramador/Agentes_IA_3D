@@ -9,9 +9,10 @@ import ReviewPanel from './ReviewPanel.jsx'
 import PermisosPicker from './PermisosPicker.jsx'
 import CATALOGO from '../../../roles/catalogo.json'
 import { toLines, fromLines, DEPT_PREFIX } from '../agencia.js'
+import { confirmar } from './Confirmar.jsx'
 
 export default function TaskForm() {
-  const { user, users, agents, clients, clientDocs, departments, taskTypes, userProfile, editingTask, closeTaskForm, showToast, sendNotification, isAdmin, isSuperAdmin } = useApp()
+  const { user, users, agents, clients, clientDocs, departments, taskTypes, userProfile, editingTask, closeTaskForm, showToast, sendNotification, isAdmin, isSuperAdmin, tasks } = useApp()
   const CLIENTES = clients || []
   const isEdit = !!editingTask
 
@@ -183,6 +184,7 @@ export default function TaskForm() {
         const timerUpdates = computeTimerUpdates(editingTask, form.estado)
         const updates = {
           ...form,
+          tarea: form.tarea.replace(/\s+/g, ' ').trim(),
           ...agencyFields(),
           fechaRequerimiento: form.fechaRequerimiento
             ? new Date(form.fechaRequerimiento + 'T12:00:00')
@@ -229,6 +231,7 @@ export default function TaskForm() {
       } else {
         const newTask = {
           ...form,
+          tarea: form.tarea.replace(/\s+/g, ' ').trim(),
           ...agencyFields(),
           creadaPor: 'equipo',
           fechaRequerimiento: form.fechaRequerimiento
@@ -283,8 +286,8 @@ export default function TaskForm() {
   const readOnly = isEdit && !isAdmin && editingTask.asignado !== user.uid
 
   // Cerrar solo con Cancelar (o la X); si hay cambios sin guardar, confirmar
-  const handleCancel = () => {
-    if (dirty && !readOnly && !confirm('Tienes cambios sin guardar. ¿Descartarlos y cerrar?')) return
+  const handleCancel = async () => {
+    if (dirty && !readOnly && !(await confirmar('Tienes cambios sin guardar. ¿Descartarlos y cerrar?'))) return
     closeTaskForm()
   }
 
@@ -329,7 +332,8 @@ export default function TaskForm() {
           </div>
         )}
 
-        {isEdit && <ReviewPanel task={editingTask} onDone={closeTaskForm} />}
+        {/* QA 7: la tarea en vivo (Detener → Reanudar, nuevas versiones) y no la copia de cuando se abrió el modal */}
+        {isEdit && <ReviewPanel task={(tasks || []).find(x => x.id === editingTask.id) || editingTask} onDone={closeTaskForm} />}
 
         {readOnly ? (
           <ReadOnlyTask task={editingTask} users={users} />
@@ -578,7 +582,7 @@ export default function TaskForm() {
                 <option value={0}>Sin límite definido</option>
                 {[15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480].map(m => (
                   <option key={m} value={m}>
-                    {m < 60 ? `${m} minutos` : `${m / 60} hora${m > 60 ? 's' : ''}${m % 60 ? ` ${m % 60} min` : ''}`}
+                    {m < 60 ? `${m} minutos` : `${Math.floor(m / 60)} hora${m >= 120 ? 's' : ''}${m % 60 ? ` ${m % 60} min` : ''}`}
                   </option>
                 ))}
               </select>

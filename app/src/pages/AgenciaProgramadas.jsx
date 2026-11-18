@@ -7,6 +7,7 @@ import PermisosPicker from '../components/PermisosPicker.jsx'
 import CATALOGO from '../../../roles/catalogo.json'
 import { DEPT_PREFIX } from '../agencia.js'
 import { proximaEjecucion, describirRegla, reglaValida, DIAS } from '../../../motor/programadas.mjs'
+import { confirmar } from '../components/Confirmar.jsx'
 
 const ZONA = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const toMs = (ts) => ts?.toMillis?.() || (ts?.seconds ? ts.seconds * 1000 : 0)
@@ -70,8 +71,8 @@ export default function AgenciaProgramadas() {
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => setEditando(s)}>Editar</button>
               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }}
-                onClick={async () => { if (confirm(`¿Eliminar la rutina "${s.nombre}"? Las tareas que ya creó se conservan.`)) { await deleteDoc(doc(db, 'schedules', s.id)); showToast('Rutina eliminada', 'info') } }}>
-                <Icon name="trash" size={12} />
+                onClick={async () => { if (await confirmar(`¿Eliminar la rutina "${s.nombre}"? Las tareas que ya creó se conservan.`, { titulo: 'Eliminar rutina', boton: 'Eliminar' })) { await deleteDoc(doc(db, 'schedules', s.id)); showToast('Rutina eliminada', 'info') } }}>
+                <Icon name="trash" size={12} /> Eliminar
               </button>
             </div>
             {tareasDe(s.id).length > 0 && (

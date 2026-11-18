@@ -7,6 +7,7 @@ import { doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/fi
 import Icon from './Icons.jsx'
 import { emptyClient, slugify, toLines, fromLines } from '../agencia.js'
 import { IDIOMAS_DISPONIBLES, IDIOMA_POR_DEFECTO } from '../../../motor/agencia.mjs'
+import { confirmar } from './Confirmar.jsx'
 
 const TABS = [
   { id: 'negocio', label: 'Negocio' },
@@ -302,7 +303,7 @@ export default function ClientProfile({ client, departments, onClose, onRenamed,
             {field('Credencial propia del cliente (opcional)', 'credencialGoogle', { area: true, rows: 3, placeholder: 'Pega el JSON de la cuenta de servicio (solo si el cliente usa la suya)', hint: 'Se guarda aparte y no se vuelve a mostrar.' })}
             {estadoGoogle?.clientes?.[c.id] && (
               <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', alignSelf: 'flex-start' }}
-                onClick={async () => { if (!confirm('¿Quitar la credencial propia de este cliente? Se usará la de la agencia.')) return; try { await deleteDoc(doc(db, 'secretos', `cliente_${c.id}_google`)); showToast('Credencial quitada', 'info') } catch { showToast('No se pudo quitar', 'error') } }}>
+                onClick={async () => { if (!(await confirmar('¿Quitar la credencial propia de este cliente? Se usará la de la agencia.'))) return; try { await deleteDoc(doc(db, 'secretos', `cliente_${c.id}_google`)); showToast('Credencial quitada', 'info') } catch { showToast('No se pudo quitar', 'error') } }}>
                 Quitar credencial propia
               </button>
             )}

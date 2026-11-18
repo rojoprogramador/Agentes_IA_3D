@@ -4,6 +4,7 @@ import { db } from '../firebase.js'
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import Icon from '../components/Icons.jsx'
 import AgentModal, { AgentAvatar } from '../components/AgentModal.jsx'
+import { confirmar } from '../components/Confirmar.jsx'
 
 // Super Admin: administra todos los agentes de IA (foto, nombre, descripción, misión, personaje 3D)
 export default function AgentsAdmin() {
@@ -36,7 +37,7 @@ export default function AgentsAdmin() {
 
   const remove = async (a) => {
     const open = stats[a.id]?.abiertas || 0
-    if (!confirm(`¿Eliminar a ${a.name}?${open ? ` Tiene ${open} tareas abiertas que quedarán sin asignar.` : ''} Esta acción no se puede deshacer.`)) return
+    if (!(await confirmar(`¿Eliminar a ${a.name}?${open ? ` Tiene ${open} tareas abiertas que quedarán sin asignar.` : ''} Esta acción no se puede deshacer.`, { titulo: 'Eliminar agente', boton: 'Eliminar' }))) return
     try {
       await deleteDoc(doc(db, 'agents', a.id))
       showToast(`${a.name} fue eliminado`)

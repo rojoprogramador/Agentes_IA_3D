@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { db } from '../firebase.js'
 import { collection, doc, onSnapshot, updateDoc, deleteDoc, addDoc, query, orderBy, limit, serverTimestamp } from 'firebase/firestore'
+import { confirmar } from '../components/Confirmar.jsx'
 
 // Agencia → WhatsApp (fase B9). Los números nuevos llegan como "pendientes" con un código de emparejamiento.
 // Un admin decide: dueño (habla con el coordinador), cliente (su mensaje va a esta bandeja y responde una persona)
@@ -82,7 +83,7 @@ export default function AgenciaWhatsApp() {
               {c.estado === 'bloqueado'
                 ? <button className="btn btn-ghost btn-sm" onClick={() => decidir(c, { estado: 'aprobado' }, 'Desbloqueado')}>Desbloquear</button>
                 : <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => decidir(c, { estado: 'bloqueado' }, 'Bloqueado: el motor ignora sus mensajes')}>Bloquear</button>}
-              <button className="btn btn-ghost btn-sm" onClick={async () => { if (confirm('¿Borrar el contacto? Si vuelve a escribir, tendrá que pedir acceso otra vez.')) await deleteDoc(doc(db, 'whatsappContactos', c.id)).catch(() => showToast('No se pudo borrar', 'error')) }}>Borrar</button>
+              <button className="btn btn-ghost btn-sm" onClick={async () => { if (await confirmar('¿Borrar el contacto? Si vuelve a escribir, tendrá que pedir acceso otra vez.')) await deleteDoc(doc(db, 'whatsappContactos', c.id)).catch(() => showToast('No se pudo borrar', 'error')) }}>Borrar</button>
             </div>
           ))}
         </div>
@@ -136,9 +137,9 @@ export default function AgenciaWhatsApp() {
 function Pendiente({ c, clientDocs, decidir }) {
   const [rol, setRol] = useState('cliente')
   const [clienteId, setClienteId] = useState('')
-  const aprobar = () => {
+  const aprobar = async () => {
     if (rol === 'cliente' && !clienteId) { alert('Elige a qué cliente pertenece este número'); return }
-    if (rol === 'dueno' && !confirm('Como dueño, este número podrá hablar con el coordinador (que lee tu correo y calendario). ¿Seguro que es tu número?')) return
+    if (rol === 'dueno' && !(await confirmar('Como dueño, este número podrá hablar con el coordinador (que lee tu correo y calendario). ¿Seguro que es tu número?'))) return
     decidir(c, { estado: 'aprobado', rol, clienteId: rol === 'cliente' ? clienteId : '' }, 'Contacto aprobado')
   }
   return (

@@ -1,4 +1,24 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+
+// Cierra un menú con un clic fuera de él o con Esc. (Una capa position:fixed no sirve aquí: el backdrop-filter de
+// .header la encierra en la cabecera y no cubre la página.)
+function useCerrarAfuera(abierto, cerrar) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!abierto) return
+    const clic = (e) => { if (ref.current && !ref.current.contains(e.target)) cerrar() }
+    const tecla = (e) => { if (e.key === 'Escape') cerrar() }
+    document.addEventListener('mousedown', clic)
+    document.addEventListener('touchstart', clic)
+    document.addEventListener('keydown', tecla)
+    return () => {
+      document.removeEventListener('mousedown', clic)
+      document.removeEventListener('touchstart', clic)
+      document.removeEventListener('keydown', tecla)
+    }
+  }, [abierto, cerrar])
+  return ref
+}
 import { useApp, APP_VERSION, SUPER_ADMIN_EMAIL } from '../App.jsx'
 import Icon from './Icons.jsx'
 import { BRAND } from '../config.js'
@@ -31,6 +51,8 @@ export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useCerrarAfuera(notifOpen, () => setNotifOpen(false))
+  const menuRef = useCerrarAfuera(menuOpen, () => setMenuOpen(false))
 
   const items = isAdmin
     ? (isSuperAdmin ? [...ADMIN_NAV, ...SUPER_NAV] : ADMIN_NAV)
@@ -40,10 +62,14 @@ export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
 
   const logoSrc = theme === 'dark' ? BRAND.logoDark : BRAND.logo
 
-  // Notificaciones: mis tareas en correcciones + esperando mi aceptación
+  // Notificaciones: mis tareas en correcciones + esperando mi aceptación; para admins, además, las entregas de los
+  // agentes que esperan aprobación y las preguntas de los agentes (QA 2). Para quien no es admin, las preguntas de
+  // los agentes en tareas que creó.
   const myCorrections = tasks.filter(t => t.asignado === user.uid && t.estado === 'en_revision')
   const myPendingAccept = tasks.filter(t => t.asignado === user.uid && t.pendingAcceptance)
-  const notifCount = myCorrections.length + myPendingAccept.length
+  const porAprobar = isAdmin ? tasks.filter(t => t.estado === 'en_espera' && t.agentStatus === 'done') : []
+  const preguntas = tasks.filter(t => t.agentStatus === 'needs_info' && (isAdmin || t.createdBy === user.email))
+  const notifCount = myCorrections.length + myPendingAccept.length + porAprobar.length + preguntas.length
 
   return (
     <>
@@ -93,7 +119,7 @@ export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
         </button>
 
         {/* Campana de notificaciones */}
-        <div className="dropdown-wrap">
+        <div className="dropdown-wrap" ref={notifRef}>
           <button
             className="icon-btn"
             data-tour="notificaciones"
@@ -116,8 +142,7 @@ export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
 
           {notifOpen && (
             <>
-              <div style={{ position: 'fixed', inset: 0, zIndex: 150 }} onClick={() => setNotifOpen(false)} />
-              <div className="dropdown-menu" style={{ zIndex: 200, minWidth: 300, maxWidth: 340 }}>
+              <div className="dropdown-menu" style={{ zIndex: 200, minWidth: 300, maxWidth: 340, maxHeight: '70vh', overflowY: 'auto' }}>
                 <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon name="bell" size={14} /> Notificaciones
                 </div>
@@ -126,6 +151,35 @@ export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
                   <div style={{ padding: '18px 12px', textAlign: 'center', fontSize: 13, color: 'var(--text-3)' }}>
                     Sin notificaciones pendientes
                   </div>
+                )}
+
+                {/* Preguntas de los agentes */}
+                {preguntas.slice(0, 10).map(t => (
+                  <button key={'q' + t.id} className="dropdown-item"
+                    onClick={() => { openEditTask(t); setNotifOpen(false) }}
+                    style={{ alignItems: 'flex-start' }}>
+                    <span style={{ color: 'var(--warning)', marginTop: 2 }}><Icon name="alert" size={15} /></span>
+                    <span>
+                      <strong style={{ display: 'block', fontSize: 12.5 }}>Un agente necesita información</strong>
+                      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{t.tarea}</span>
+                    </span>
+                  </button>
+                ))}
+
+                {/* Entregas de agentes por aprobar */}
+                {porAprobar.slice(0, 15).map(t => (
+                  <button key={'a' + t.id} className="dropdown-item"
+                    onClick={() => { openEditTask(t); setNotifOpen(false) }}
+                    style={{ alignItems: 'flex-start' }}>
+                    <span style={{ color: 'var(--success)', marginTop: 2 }}><Icon name="check" size={15} /></span>
+                    <span>
+                      <strong style={{ display: 'block', fontSize: 12.5 }}>Entrega por aprobar</strong>
+                      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{t.tarea}</span>
+                    </span>
+                  </button>
+                ))}
+                {porAprobar.length > 15 && (
+                  <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--text-3)' }}>y {porAprobar.length - 15} más en el Pipeline</div>
                 )}
 
                 {/* Tareas devueltas esperando aceptación */}
@@ -172,7 +226,7 @@ export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
         </button>
 
         {/* Menú usuario */}
-        <div className="dropdown-wrap">
+        <div className="dropdown-wrap" ref={menuRef}>
           <div className="user-chip" onClick={() => setMenuOpen(v => !v)}>
             {userProfile?.photo
               ? <img src={userProfile.photo} alt="" />
@@ -193,7 +247,6 @@ export default function Header({ page, setPage, onLogout, onTour = () => {} }) {
 
           {menuOpen && (
             <>
-              <div style={{ position: 'fixed', inset: 0, zIndex: 150 }} onClick={() => setMenuOpen(false)} />
               <div className="dropdown-menu" style={{ zIndex: 200 }}>
                 <div style={{ padding: '8px 12px 10px', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{userProfile?.name}</div>
